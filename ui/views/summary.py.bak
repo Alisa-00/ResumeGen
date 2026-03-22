@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QTextEdit, QMessageBox, QSizePolicy,
+)
+
+from db.database import Database
+from ui.widgets import (
+    section_title, hline, primary_btn, flat_link_btn,
+    scrollable, Card, KeywordTagger,
+)
+
+
+class SummaryView(QWidget):
+    def __init__(self, db: Database, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self._cards: list[tuple[Card, dict | None]] = []
+
+        inner = QWidget()
+        layout = QVBoxLayout(inner)
+        layout.setContentsMargins(24, 16, 24, 16)
+        layout.setSpacing(12)
+        layout.addWidget(section_title("Summary"))
+
+        hint = QLabel(
+            "Add one or more summaries and tag them with keywords. "
+            "At generation time the best-matching summary for the active profile is used."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #a6adc8; font-size: 16px;")
+        layout.addWidget(hint)
+        layout.addWidget(hline())
+
+        self._cards_container = QWidget()
+        self._cards_layout    = QVBoxLayout(self._cards_container)
+        self._cards_layout.setContentsMargins(0, 0, 0, 0)
+        self._cards_layout.setSpacing(10)
+        layout.addWidget(self._cards_container)
+
+        btn_row = QHBoxLayout()
+        add_btn  = flat_link_btn("+ Add Summary")
+        add_btn.clicked.connect(lambda: self._add_card())
+        save_btn = primary_btn("Save All")
+        save_btn.clicked.connect(self._save_all)
+        btn_row.addWidget(add_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+        layout.addStretch()
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scrollable(inner))
+
+        self._load()
+
+    def _load(self):
+        for row in self.db.get_summaries():
+            selected = self.db.get_summary_keywords(row["id"])
+            self._add_card(row, selected)
+
+    def _add_card(self, data: dict | None = None, selected_kw_ids: list[int] | None = None):
+        # build card manually with tight spacing instead of using Card widget
+        card = Card()
+        card._outer.setSpacing(6)
+        card._outer.setContentsMargins(12, 10, 12, 10)
+
+        f_text = QTextEdit((data or {}).get("text", ""))
+        f_text.setPlaceholderText("Write your summary here…")
+        f_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        f_text.setFixedHeight(90)
+
+        all_kw = self.db.get_keywords()
+        tagger = KeywordTagger(all_kw, selected_kw_ids or [])
+
+        card.add_widget(f_text)
+        card.add_widget(tagger)
+        card.add_delete_button()
+        card.delete_requested.connect(self._delete_card)
+
+        card._fields = dict(text=f_text, tagger=tagger)
+        card._data   = data
+
+        self._cards.append((card, data))
+        self._cards_layout.addWidget(card)
+
+    def _delete_card(self, card: Card):
+        if card._data:
+            self.db.delete_summary(card._data["id"])
+        self._cards = [(c, d) for c, d in self._cards if c is not card]
+        self._cards_layout.removeWidget(card)
+        card.deleteLater()
+
+    def _save_all(self):
+        for card, _ in self._cards:
+            f      = card._fields
+            text   = f["text"].toPlainText().strip()
+            kw_ids = f["tagger"].selected_ids()
+            new_id = self.db.upsert_summary(text, id=(card._data or {}).get("id"))
+            self.db.set_summary_keywords(new_id, kw_ids)
+            card._data = {**(card._data or {}), "id": new_id}
+        QMessageBox.information(self, "Saved", "Summaries saved.")

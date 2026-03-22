@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="default.css">
+    <style>
+        body {
+            font-family: {{ font_family }}, serif;
+            font-size: {{ font_size }}pt;
+            margin: {{ margin_top }}mm {{ margin_right }}mm {{ margin_bottom }}mm {{ margin_left }}mm;
+        }
+    </style>
+</head>
+
+<body>
+
+    {# ── CONTACT ──────────────────────────────────────────────── #}
+    {% if sections_enabled.contact %}
+    <header class="contact-block">
+        <h1>{{ contact.name }}</h1>
+        <div class="contact-row">
+            <span><a href="mailto:{{ contact.email }}">{{ contact.email }}</a></span>
+            {% if contact.phone %}<span>{{ contact.phone }}</span>{% endif %}
+            {% if contact.location %}<span>{{ contact.location }}</span>{% endif %}
+            {% for site in contact.websites %}
+            <span><a href="{{ site.url }}">{{ site.label }}</a></span>
+            {% endfor %}
+        </div>
+    </header>
+    {% endif %}
+
+    {% for section in section_order %}
+
+    {# ── SUMMARY ───────────────────────────────────────────── #}
+    {% if section == "summary" and sections_enabled.summary and summary.text %}
+    <section>
+        <p class="summary-text">{{ summary.text }}</p>
+    </section>
+    {% endif %}
+
+    {# ── EXPERIENCE ────────────────────────────────────────── #}
+    {% if section == "experience" and sections_enabled.experience and experiences %}
+    <section>
+        <h2 class="section-heading">Experience</h2>
+        {% for job in experiences %}
+        <div class="entry">
+            <div class="entry-header">
+                <span class="entry-title">{{ job.position_name }}</span>
+                <span class="entry-date">
+                    {{ job.start_date | format_date }}
+                    –
+                    {% if job.is_ongoing %}Present{% else %}{{ job.end_date | format_date }}{% endif %}
+                </span>
+            </div>
+            <div class="entry-sub">
+                <span class="entry-org">{{ job.organization_name }}</span>
+                {% if job.location %}<span class="entry-loc">{{ job.location }}</span>{% endif %}
+            </div>
+            {% if job.bullet_points %}
+            <ul>
+                {% for bp in job.bullet_points %}
+                <li>{{ bp.text }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {# ── EDUCATION ─────────────────────────────────────────── #}
+    {% if section == "education" and sections_enabled.education and education %}
+    <section>
+        <h2 class="section-heading">Education</h2>
+        {% for edu in education %}
+        <div class="entry">
+            <div class="entry-header">
+                <span class="entry-title">{{ edu.degree }}{% if edu.field %}, {{ edu.field }}{% endif %}</span>
+                <span class="entry-date">
+                    {{ edu.start_date | format_date }}
+                    –
+                    {% if edu.is_ongoing %}Present{% else %}{{ edu.end_date | format_date }}{% endif %}
+                </span>
+            </div>
+            <div class="entry-sub">
+                <span class="entry-org">{{ edu.school }}</span>
+                {% if edu.location %}<span class="entry-loc">{{ edu.location }}</span>{% endif %}
+                {% if edu.gpa %}<span class="entry-gpa">GPA: {{ edu.gpa }}</span>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {# ── PROJECTS ──────────────────────────────────────────── #}
+    {% if section == "projects" and sections_enabled.projects and projects %}
+    <section>
+        <h2 class="section-heading">Projects</h2>
+        {% for proj in projects %}
+        <div class="entry">
+            <div class="entry-header">
+                <span class="entry-title">
+                    {% if proj.link %}<a href="{{ proj.link }}">{{ proj.name }}</a>
+                    {% else %}{{ proj.name }}{% endif %}
+                </span>
+                {% if proj.start_date %}
+                <span class="entry-date">
+                    {{ proj.start_date | format_date }}
+                    –
+                    {% if proj.is_ongoing %}Present{% else %}{{ proj.end_date | format_date }}{% endif %}
+                </span>
+                {% endif %}
+            </div>
+            {% if proj.text %}<p class="entry-desc">{{ proj.text }}</p>{% endif %}
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {# ── SKILLS / KEYWORDS ─────────────────────────────────── #}
+    {% if section == "keywords" and sections_enabled.keywords and keywords %}
+    <section>
+        <h2 class="section-heading">Skills</h2>
+        <p class="skills-list">{{ keywords | map(attribute="name") | join(" · ") }}</p>
+    </section>
+    {% endif %}
+
+    {% endfor %}{# end section_order loop #}
+
+</body>
+
+</html>
