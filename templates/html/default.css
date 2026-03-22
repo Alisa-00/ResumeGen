@@ -14,8 +14,8 @@ body {
 }
 
 a {
-    color: inherit;
-    text-decoration: none;
+    color: #1a5fb4;
+    text-decoration: underline;
 }
 
 /* ── Contact block ──────────────────────────────────────────── */
