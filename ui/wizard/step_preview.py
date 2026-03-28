@@ -538,14 +538,40 @@ class _ExperienceItem(_SubItem):
 
 
 class _EducationItem(_SubItem):
-    def __init__(self, edu: dict, parent=None):
+    def __init__(self, edu: dict, override: dict | None = None, parent=None):
         label = f"{edu.get('degree','')} — {edu.get('school','')}"
         super().__init__(edu["id"], label, parent)
-        for lbl, key in [("Field","field"),("GPA","gpa"),("Start","start_date"),("End","end_date")]:
-            val = edu.get(key) or ""
-            if val:
-                w = QLabel(val); w.setStyleSheet("color: #a6adc8; font-size: 16px;")
-                self._add_body_row(lbl, w)
+        self._original = edu
+        o = override or {}
+
+        for field_key, label_text, placeholder in [
+            ("degree",   "Degree",   "e.g. B.Sc."),
+            ("school",   "School",   "e.g. MIT"),
+            ("location", "Location", "e.g. Boston, MA"),
+            ("field",    "Field",    "e.g. Computer Science"),
+            ("start_date", "Start", "YYYY-MM"),
+            ("end_date",   "End",   "YYYY-MM"),
+        ]:
+            val = o.get(field_key, edu.get(field_key) or "")
+            w = QLineEdit(val)
+            w.setPlaceholderText(placeholder)
+            w.setStyleSheet(
+                "QLineEdit { background: #141618; border: 1px solid #89b4fa;"
+                " border-radius: 4px; padding: 2px 6px; }"
+            )
+            w.textChanged.connect(self.changed)
+            setattr(self, f"_f_{field_key}", w)
+            self._add_body_row(label_text, w)
+
+    def get_overrides(self) -> dict | None:
+        fields = ["degree", "school", "location", "field", "start_date", "end_date"]
+        result = {}
+        for f in fields:
+            current  = getattr(self, f"_f_{f}").text().strip()
+            original = (self._original.get(f) or "").strip()
+            if current != original:
+                result[f] = current
+        return result if result else None
 
 
 class _ProjectItem(_SubItem):
@@ -681,9 +707,11 @@ class _ExperienceContent(QWidget):
 class _EducationContent(QWidget):
     changed = Signal()
 
-    def __init__(self, education: list[dict], included_ids: list[int] | None, parent=None):
+    def __init__(self, education: list[dict], included_ids: list[int] | None,
+                 overrides: dict[int, dict] | None = None, parent=None):
         super().__init__(parent)
         self._all = education
+        self._overrides = overrides or {}
         root = QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(4)
         self._sublist = _SubList(); self._sublist.changed.connect(self.changed)
         root.addWidget(self._sublist)
@@ -693,7 +721,8 @@ class _EducationContent(QWidget):
         if included_ids is not None:
             id_map = {e["id"]: e for e in education}
             shown  = [id_map[i] for i in included_ids if i in id_map]
-        for edu in shown: self._sublist.add_item(_EducationItem(edu))
+        for edu in shown:
+            self._sublist.add_item(_EducationItem(edu, self._overrides.get(edu["id"])))
 
     def _add_picker(self):
         current = set(self._sublist.item_ids())
@@ -710,6 +739,15 @@ class _EducationContent(QWidget):
                 self._sublist.add_item(_EducationItem(edu)); self.changed.emit()
 
     def included_ids(self) -> list[int]: return self._sublist.item_ids()
+
+    def get_overrides(self) -> dict[int, dict]:
+        result = {}
+        for item in self._sublist._items:
+            if isinstance(item, _EducationItem):
+                ov = item.get_overrides()
+                if ov:
+                    result[item.item_id] = ov
+        return result
 
 
 class _ProjectsContent(QWidget):
@@ -1109,6 +1147,8 @@ class StepPreview(QWidget):
         inc_prj     = json.loads(app["included_projects"])    if app and app.get("included_projects")    else None
         inc_bullets = {int(k): v for k, v in json.loads(app["included_bullets"]).items()} \
                       if app and app.get("included_bullets") else None
+        edu_overrides = {int(k): v for k, v in json.loads(app["education_overrides"]).items()} \
+                        if app and app.get("education_overrides") else None
         sum_text    = app.get("summary_text_override")        if app else None
         extra       = json.loads(app["extra_keywords"]) if app and app.get("extra_keywords") else self.job_data.get("extra_kw_ids", [])
         kw_list     = json.loads(app["keyword_list"])    if app and app.get("keyword_list")    else None
@@ -1121,7 +1161,7 @@ class StepPreview(QWidget):
                 continue
             content = self._make_content(key, self._resume_data, inc_exp, inc_edu, inc_prj,
                                          None, extra, saved_contact, saved_websites,
-                                         sum_text, kw_list, inc_bullets)
+                                         sum_text, kw_list, inc_bullets, edu_overrides)
             if content is None:
                 continue
             row = SectionRow(key, enabled.get(key, True), content)
@@ -1130,7 +1170,7 @@ class StepPreview(QWidget):
     def _make_content(self, key, data, inc_exp, inc_edu, inc_prj,
                       sel_sum, extra_kw_ids, saved_contact=None,
                       saved_websites=None, saved_sum_text=None,
-                      saved_kw_list=None, inc_bullets=None):
+                      saved_kw_list=None, inc_bullets=None, edu_overrides=None):
         if key == "contact":
             contact      = saved_contact  if saved_contact  is not None else (data.get("contact") or {})
             websites     = saved_websites if saved_websites is not None else (data.get("websites") or [])
@@ -1152,7 +1192,7 @@ class StepPreview(QWidget):
             w.changed.connect(self._save_debounce.start)
             return w
         if key == "education":
-            w = _EducationContent(data.get("education") or [], inc_edu)
+            w = _EducationContent(data.get("education") or [], inc_edu, edu_overrides)
             w.changed.connect(self._schedule_regen); return w
         if key == "projects":
             w = _ProjectsContent(data.get("projects") or [], inc_prj)
@@ -1202,6 +1242,7 @@ class StepPreview(QWidget):
             included_bullets_map   = included_bullets_map,
             included_experiences   = exp_c.included_ids()       if isinstance(exp_c, _ExperienceContent) else None,
             included_education     = edu_c.included_ids()       if isinstance(edu_c, _EducationContent)  else None,
+            education_overrides    = edu_c.get_overrides()      if isinstance(edu_c, _EducationContent)  else {},
             included_projects      = prj_c.included_ids()       if isinstance(prj_c, _ProjectsContent)   else None,
             project_text_overrides = prj_c.get_text_overrides() if isinstance(prj_c, _ProjectsContent)   else {},
             project_name_overrides = prj_c.get_name_overrides() if isinstance(prj_c, _ProjectsContent)   else {},
@@ -1222,8 +1263,8 @@ class StepPreview(QWidget):
             s["keyword_ids"], s["section_order"], s["sections_enabled"],
             s["bullet_overrides"], s["included_bullets_map"],
             s["included_experiences"], s["included_education"],
-            s["included_projects"], s["project_text_overrides"],
-            s["project_name_overrides"],
+            s["included_projects"], s["education_overrides"],
+            s["project_text_overrides"], s["project_name_overrides"],
             s["contact_override"], s["websites_override"],
             s["summary_text_override"],
         )
@@ -1261,9 +1302,10 @@ class StepPreview(QWidget):
             contact_override      = json.dumps(s["contact_override"]) if s["contact_override"] else None,
             websites_override     = json.dumps(s["websites_override"]) if s["websites_override"] is not None else None,
             included_experiences  = json.dumps(s["included_experiences"]) if s["included_experiences"] is not None else None,
-            included_education    = json.dumps(s["included_education"])   if s["included_education"]   is not None else None,
-            included_projects     = json.dumps(s["included_projects"])    if s["included_projects"]    is not None else None,
-            included_bullets      = json.dumps(s["included_bullets_map"]) if s["included_bullets_map"] is not None else None,
+            included_education    = json.dumps(s["included_education"])      if s["included_education"]      is not None else None,
+            included_projects     = json.dumps(s["included_projects"])       if s["included_projects"]       is not None else None,
+            included_bullets      = json.dumps(s["included_bullets_map"])    if s["included_bullets_map"]    is not None else None,
+            education_overrides   = json.dumps({str(k): v for k, v in s["education_overrides"].items()}) if s["education_overrides"] else None,
             id                    = self.application_id,
         )
         # save the full explicit keyword list so reopening uses it directly

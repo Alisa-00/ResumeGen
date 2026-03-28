@@ -211,6 +211,7 @@ class Database:
              "TEXT NOT NULL DEFAULT '{company}_{position}_{date}'"),
             ("job_application", "included_bullets",      "TEXT"),
             ("profile",         "summary",               "TEXT"),
+            ("job_application", "education_overrides",   "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -688,6 +689,7 @@ class Database:
         included_education: str | None = None,
         included_projects: str | None = None,
         included_bullets: str | None = None,
+        education_overrides: str | None = None,
         id: int | None = None,
     ) -> int:
         if id:
@@ -699,14 +701,16 @@ class Database:
                    selected_summary_id=?, summary_text_override=?,
                    contact_override=?, websites_override=?,
                    included_experiences=?, included_education=?,
-                   included_projects=?, included_bullets=?
+                   included_projects=?, included_bullets=?,
+                   education_overrides=?
                    WHERE id=?""",
                 (profile_id, status_id, position_name, company_name,
                  date_applied, extra_keywords, section_order, sections_enabled,
                  resume_pdf_path, selected_summary_id, summary_text_override,
                  contact_override, websites_override,
                  included_experiences, included_education,
-                 included_projects, included_bullets, id),
+                 included_projects, included_bullets,
+                 education_overrides, id),
             )
             return id
         return self.execute(
@@ -716,14 +720,16 @@ class Database:
                 selected_summary_id, summary_text_override,
                 contact_override, websites_override,
                 included_experiences, included_education,
-                included_projects, included_bullets)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                included_projects, included_bullets,
+                education_overrides)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (profile_id, status_id, position_name, company_name,
              date_applied, extra_keywords, section_order, sections_enabled,
              selected_summary_id, summary_text_override,
              contact_override, websites_override,
              included_experiences, included_education,
-             included_projects, included_bullets),
+             included_projects, included_bullets,
+             education_overrides),
         )
 
     def delete_application(self, id: int) -> None:

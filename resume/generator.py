@@ -78,6 +78,7 @@ def _assemble(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
     project_name_overrides: dict[int, str] | None = None,
     contact_override: dict | None = None,
@@ -166,6 +167,13 @@ def _assemble(
             key=lambda e: id_order[e["id"]]
         )
 
+    # apply education overrides from the editor
+    if education_overrides:
+        def _apply_edu(e):
+            ov = education_overrides.get(e["id"])
+            return {**e, **ov} if ov else e
+        education = [_apply_edu(e) for e in education]
+
     # section order + enabled
     ps = data["profile_settings"]
     if section_order_override is not None:
@@ -225,6 +233,7 @@ def generate_resume_pdf_for_app(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
     project_name_overrides: dict[int, str] | None = None,
     contact_override: dict | None = None,
@@ -245,6 +254,7 @@ def generate_resume_pdf_for_app(
             included_experience_ids   = included_experience_ids,
             included_education_ids    = included_education_ids,
             included_project_ids      = included_project_ids,
+            education_overrides       = education_overrides,
             project_text_overrides    = project_text_overrides,
             project_name_overrides    = project_name_overrides,
             contact_override          = contact_override,
