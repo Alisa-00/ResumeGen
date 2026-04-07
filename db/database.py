@@ -113,7 +113,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
         '{"contact":1,"summary":1,"experience":1,"education":1,"projects":1,"keywords":1,"custom":0}',
     default_template_id INTEGER REFERENCES resume_template(id),
     pdf_output_folder   TEXT,
-    pdf_filename_template TEXT  NOT NULL DEFAULT '{company}_{position}_{date}'
+    pdf_filename_template TEXT  NOT NULL DEFAULT '{company}_{position}_{date}',
+    date_format         TEXT    NOT NULL DEFAULT 'YYYY'
 );
 
 CREATE TABLE IF NOT EXISTS profile_settings (
@@ -128,7 +129,7 @@ CREATE TABLE IF NOT EXISTS resume_config (
     profile_id   INTEGER REFERENCES profile(id),
     template_id  INTEGER REFERENCES resume_template(id),
     show_summary INTEGER NOT NULL DEFAULT 1 CHECK (show_summary IN (0,1)),
-    date_format  TEXT    NOT NULL DEFAULT 'MMM YYYY'
+    date_format  TEXT    NOT NULL DEFAULT 'YYYY'
 );
 
 CREATE TABLE IF NOT EXISTS job_application_status (
@@ -200,24 +201,26 @@ class Database:
         """Add any columns that exist in the schema but not in the live DB."""
         migrations = [
             ("job_application", "summary_text_override", "TEXT"),
-            ("job_application", "contact_override",      "TEXT"),
-            ("job_application", "websites_override",     "TEXT"),
-            ("job_application", "selected_summary_id",   "INTEGER"),
-            ("job_application", "included_experiences",  "TEXT"),
-            ("job_application", "included_education",    "TEXT"),
-            ("job_application", "included_projects",     "TEXT"),
-            ("app_settings",    "pdf_output_folder",     "TEXT"),
-            ("app_settings",    "pdf_filename_template",
-             "TEXT NOT NULL DEFAULT '{company}_{position}_{date}'"),
-            ("job_application", "included_bullets",      "TEXT"),
-            ("profile",         "summary",               "TEXT"),
-            ("job_application", "education_overrides",   "TEXT"),
+            ("job_application", "contact_override", "TEXT"),
+            ("job_application", "websites_override", "TEXT"),
+            ("job_application", "selected_summary_id", "INTEGER"),
+            ("job_application", "included_experiences", "TEXT"),
+            ("job_application", "included_education", "TEXT"),
+            ("job_application", "included_projects", "TEXT"),
+            ("app_settings", "pdf_output_folder", "TEXT"),
+            (
+                "app_settings",
+                "pdf_filename_template",
+                "TEXT NOT NULL DEFAULT '{company}_{position}_{date}'",
+            ),
+            ("job_application", "included_bullets", "TEXT"),
+            ("profile", "summary", "TEXT"),
+            ("job_application", "education_overrides", "TEXT"),
+            ("app_settings", "date_format", "TEXT NOT NULL DEFAULT 'YYYY'"),
         ]
         for table, column, col_def in migrations:
             try:
-                self._conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"
-                )
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
                 self._conn.commit()
                 print(f"[MIGRATE] Added column {table}.{column}")
             except sqlite3.OperationalError as e:
@@ -269,7 +272,7 @@ class Database:
     def get_contact_websites(self, contact_id: int) -> list[dict]:
         return self.fetch_all(
             "SELECT * FROM contact_website WHERE contact_id=? ORDER BY id",
-            (contact_id,)
+            (contact_id,),
         )
 
     def upsert_contact(self, name: str, email: str, phone: str, location: str) -> int:
@@ -299,21 +302,23 @@ class Database:
     # ------------------------------------------------------------------
 
     def get_resume_data(self, profile_id: int) -> dict:
-        contact  = self.get_contact()
+        contact = self.get_contact()
         websites = self.get_contact_websites(contact["id"]) if contact else []
 
         # get profile summary directly
-        profile  = self.fetch_one("SELECT * FROM profile WHERE id=?", (profile_id,))
+        profile = self.fetch_one("SELECT * FROM profile WHERE id=?", (profile_id,))
         summary_text = (profile or {}).get("summary") or ""
 
         experiences = []
         for job in self.get_work_experiences():
             bullets = []
             for bp in self.get_bullet_points(job["id"]):
-                bullets.append({
-                    **bp,
-                    "keyword_ids": self.get_bullet_point_keywords(bp["id"]),
-                })
+                bullets.append(
+                    {
+                        **bp,
+                        "keyword_ids": self.get_bullet_point_keywords(bp["id"]),
+                    }
+                )
             experiences.append({**job, "bullet_points": bullets})
 
         education = self.get_education()
@@ -323,31 +328,32 @@ class Database:
             projects.append({**p, "keyword_ids": self.get_project_keywords(p["id"])})
 
         profile_keywords = self.get_profile_keywords(profile_id)
-        settings         = self.get_settings()
+        settings = self.get_settings()
         profile_settings = self.get_profile_settings(profile_id)
 
         template = None
-        config   = self.fetch_one(
+        config = self.fetch_one(
             "SELECT * FROM resume_config WHERE profile_id=? LIMIT 1", (profile_id,)
         )
-        tmpl_id  = (config or {}).get("template_id") or \
-                   (settings or {}).get("default_template_id")
+        tmpl_id = (config or {}).get("template_id") or (settings or {}).get(
+            "default_template_id"
+        )
         if tmpl_id:
             template = self.fetch_one(
                 "SELECT * FROM resume_template WHERE id=?", (tmpl_id,)
             )
 
         return dict(
-            contact          = contact,
-            websites         = websites,
-            summary_text     = summary_text,
-            experiences      = experiences,
-            education        = education,
-            projects         = projects,
-            profile_keywords = profile_keywords,
-            settings         = settings,
-            profile_settings = profile_settings,
-            template         = template,
+            contact=contact,
+            websites=websites,
+            summary_text=summary_text,
+            experiences=experiences,
+            education=education,
+            projects=projects,
+            profile_keywords=profile_keywords,
+            settings=settings,
+            profile_settings=profile_settings,
+            template=template,
         )
 
     # ------------------------------------------------------------------
@@ -358,11 +364,16 @@ class Database:
         return self.fetch_all("SELECT * FROM resume_template ORDER BY name")
 
     def upsert_template(
-        self, name: str,
-        font_family: str, font_size: float,
-        margin_top: float, margin_bottom: float,
-        margin_left: float, margin_right: float,
-        min_bp: int, max_bp: int,
+        self,
+        name: str,
+        font_family: str,
+        font_size: float,
+        margin_top: float,
+        margin_bottom: float,
+        margin_left: float,
+        margin_right: float,
+        min_bp: int,
+        max_bp: int,
         id: int | None = None,
     ) -> int:
         if id:
@@ -371,9 +382,18 @@ class Database:
                    margin_top=?, margin_bottom=?, margin_left=?, margin_right=?,
                    min_bullet_points_per_job=?, max_bullet_points_per_job=?
                    WHERE id=?""",
-                (name, font_family, font_size,
-                 margin_top, margin_bottom, margin_left, margin_right,
-                 min_bp, max_bp, id),
+                (
+                    name,
+                    font_family,
+                    font_size,
+                    margin_top,
+                    margin_bottom,
+                    margin_left,
+                    margin_right,
+                    min_bp,
+                    max_bp,
+                    id,
+                ),
             )
             return id
         return self.execute(
@@ -382,9 +402,17 @@ class Database:
                 margin_top, margin_bottom, margin_left, margin_right,
                 min_bullet_points_per_job, max_bullet_points_per_job)
                VALUES (?,?,?,?,?,?,?,?,?)""",
-            (name, font_family, font_size,
-             margin_top, margin_bottom, margin_left, margin_right,
-             min_bp, max_bp),
+            (
+                name,
+                font_family,
+                font_size,
+                margin_top,
+                margin_bottom,
+                margin_left,
+                margin_right,
+                min_bp,
+                max_bp,
+            ),
         )
 
     def delete_template(self, id: int) -> None:
@@ -408,20 +436,28 @@ class Database:
         default_template_id: int | None,
         pdf_output_folder: str | None = None,
         pdf_filename_template: str = "{company}_{position}_{date}",
+        date_format: str = "YYYY",
     ) -> None:
         self.execute(
             """INSERT INTO app_settings
                (id, section_order, sections_enabled, default_template_id,
-                pdf_output_folder, pdf_filename_template)
-               VALUES (1,?,?,?,?,?)
+                pdf_output_folder, pdf_filename_template, date_format)
+               VALUES (1,?,?,?,?,?,?)
                ON CONFLICT(id) DO UPDATE SET
                  section_order=excluded.section_order,
                  sections_enabled=excluded.sections_enabled,
                  default_template_id=excluded.default_template_id,
                  pdf_output_folder=excluded.pdf_output_folder,
-                 pdf_filename_template=excluded.pdf_filename_template""",
-            (section_order, sections_enabled, default_template_id,
-             pdf_output_folder, pdf_filename_template),
+                 pdf_filename_template=excluded.pdf_filename_template,
+                 date_format=excluded.date_format""",
+            (
+                section_order,
+                sections_enabled,
+                default_template_id,
+                pdf_output_folder,
+                pdf_filename_template,
+                date_format,
+            ),
         )
 
     def get_profile_settings(self, profile_id: int) -> dict | None:
@@ -430,7 +466,8 @@ class Database:
         )
 
     def save_profile_settings(
-        self, profile_id: int,
+        self,
+        profile_id: int,
         section_order: str | None,
         sections_enabled: str | None,
     ) -> None:
@@ -466,15 +503,20 @@ class Database:
             rows,
             key=lambda r: (
                 1 if r.get("is_ongoing") else 0,
-                r.get("start_date") or "0000-00-00"
+                r.get("start_date") or "0000-00-00",
             ),
-            reverse=True
+            reverse=True,
         )
 
     def upsert_work_experience(
-        self, org: str, position: str, location: str,
-        is_ongoing: bool, start_date: str, end_date: str | None,
-        id: int | None = None
+        self,
+        org: str,
+        position: str,
+        location: str,
+        is_ongoing: bool,
+        start_date: str,
+        end_date: str | None,
+        id: int | None = None,
     ) -> int:
         if id:
             self.execute(
@@ -500,8 +542,11 @@ class Database:
         )
 
     def upsert_bullet_point(
-        self, work_experience_id: int, text: str,
-        sort_order: int = 0, id: int | None = None,
+        self,
+        work_experience_id: int,
+        text: str,
+        sort_order: int = 0,
+        id: int | None = None,
     ) -> int:
         if id:
             self.execute(
@@ -524,9 +569,12 @@ class Database:
         )
         return [r["keyword_id"] for r in rows]
 
-    def set_bullet_point_keywords(self, bullet_point_id: int, keyword_ids: list[int]) -> None:
+    def set_bullet_point_keywords(
+        self, bullet_point_id: int, keyword_ids: list[int]
+    ) -> None:
         self.execute(
-            "DELETE FROM bullet_point_keyword WHERE bullet_point_id=?", (bullet_point_id,)
+            "DELETE FROM bullet_point_keyword WHERE bullet_point_id=?",
+            (bullet_point_id,),
         )
         for kw_id in keyword_ids:
             self.execute(
@@ -544,22 +592,48 @@ class Database:
         )
 
     def upsert_education(
-        self, degree: str, school: str, location: str, field: str,
-        gpa: str, is_ongoing: bool, start_date: str, end_date: str | None,
-        id: int | None = None
+        self,
+        degree: str,
+        school: str,
+        location: str,
+        field: str,
+        gpa: str,
+        is_ongoing: bool,
+        start_date: str,
+        end_date: str | None,
+        id: int | None = None,
     ) -> int:
         if id:
             self.execute(
                 """UPDATE education SET degree=?, school=?, location=?, field=?,
                    gpa=?, is_ongoing=?, start_date=?, end_date=? WHERE id=?""",
-                (degree, school, location, field, gpa, int(is_ongoing), start_date, end_date, id),
+                (
+                    degree,
+                    school,
+                    location,
+                    field,
+                    gpa,
+                    int(is_ongoing),
+                    start_date,
+                    end_date,
+                    id,
+                ),
             )
             return id
         return self.execute(
             """INSERT INTO education
                (degree, school, location, field, gpa, is_ongoing, start_date, end_date)
                VALUES (?,?,?,?,?,?,?,?)""",
-            (degree, school, location, field, gpa, int(is_ongoing), start_date, end_date),
+            (
+                degree,
+                school,
+                location,
+                field,
+                gpa,
+                int(is_ongoing),
+                start_date,
+                end_date,
+            ),
         )
 
     def delete_education(self, id: int) -> None:
@@ -575,8 +649,14 @@ class Database:
         )
 
     def upsert_project(
-        self, name: str, link: str, start_date: str, end_date: str | None,
-        is_ongoing: bool, text: str, id: int | None = None
+        self,
+        name: str,
+        link: str,
+        start_date: str,
+        end_date: str | None,
+        is_ongoing: bool,
+        text: str,
+        id: int | None = None,
     ) -> int:
         if id:
             self.execute(
@@ -615,11 +695,12 @@ class Database:
     def get_profiles(self) -> list[dict]:
         return self.fetch_all("SELECT * FROM profile ORDER BY name")
 
-    def upsert_profile(self, name: str, summary: str = "", id: int | None = None) -> int:
+    def upsert_profile(
+        self, name: str, summary: str = "", id: int | None = None
+    ) -> int:
         if id:
             self.execute(
-                "UPDATE profile SET name=?, summary=? WHERE id=?",
-                (name, summary, id)
+                "UPDATE profile SET name=?, summary=? WHERE id=?", (name, summary, id)
             )
             return id
         return self.execute(
@@ -667,7 +748,7 @@ class Database:
                JOIN job_application_status jas ON jas.id = ja.status_id
                LEFT JOIN profile p ON p.id = ja.profile_id
                WHERE ja.id=?""",
-            (id,)
+            (id,),
         )
 
     def upsert_application(
@@ -704,13 +785,27 @@ class Database:
                    included_projects=?, included_bullets=?,
                    education_overrides=?
                    WHERE id=?""",
-                (profile_id, status_id, position_name, company_name,
-                 date_applied, extra_keywords, section_order, sections_enabled,
-                 resume_pdf_path, selected_summary_id, summary_text_override,
-                 contact_override, websites_override,
-                 included_experiences, included_education,
-                 included_projects, included_bullets,
-                 education_overrides, id),
+                (
+                    profile_id,
+                    status_id,
+                    position_name,
+                    company_name,
+                    date_applied,
+                    extra_keywords,
+                    section_order,
+                    sections_enabled,
+                    resume_pdf_path,
+                    selected_summary_id,
+                    summary_text_override,
+                    contact_override,
+                    websites_override,
+                    included_experiences,
+                    included_education,
+                    included_projects,
+                    included_bullets,
+                    education_overrides,
+                    id,
+                ),
             )
             return id
         return self.execute(
@@ -723,13 +818,25 @@ class Database:
                 included_projects, included_bullets,
                 education_overrides)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (profile_id, status_id, position_name, company_name,
-             date_applied, extra_keywords, section_order, sections_enabled,
-             selected_summary_id, summary_text_override,
-             contact_override, websites_override,
-             included_experiences, included_education,
-             included_projects, included_bullets,
-             education_overrides),
+            (
+                profile_id,
+                status_id,
+                position_name,
+                company_name,
+                date_applied,
+                extra_keywords,
+                section_order,
+                sections_enabled,
+                selected_summary_id,
+                summary_text_override,
+                contact_override,
+                websites_override,
+                included_experiences,
+                included_education,
+                included_projects,
+                included_bullets,
+                education_overrides,
+            ),
         )
 
     def delete_application(self, id: int) -> None:
@@ -745,11 +852,13 @@ class Database:
     def get_bullet_overrides(self, application_id: int) -> dict[int, str]:
         rows = self.fetch_all(
             "SELECT bullet_point_id, text FROM application_bullet_override WHERE application_id=?",
-            (application_id,)
+            (application_id,),
         )
         return {r["bullet_point_id"]: r["text"] for r in rows}
 
-    def set_bullet_override(self, application_id: int, bullet_point_id: int, text: str) -> None:
+    def set_bullet_override(
+        self, application_id: int, bullet_point_id: int, text: str
+    ) -> None:
         self.execute(
             """INSERT INTO application_bullet_override (application_id, bullet_point_id, text)
                VALUES (?,?,?)
@@ -761,5 +870,5 @@ class Database:
     def clear_bullet_overrides(self, application_id: int) -> None:
         self.execute(
             "DELETE FROM application_bullet_override WHERE application_id=?",
-            (application_id,)
+            (application_id,),
         )

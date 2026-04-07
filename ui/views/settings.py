@@ -4,25 +4,40 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QCheckBox, QPushButton, QComboBox, QLineEdit,
-    QMessageBox, QFileDialog, QSizePolicy,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QCheckBox,
+    QPushButton,
+    QComboBox,
+    QLineEdit,
+    QMessageBox,
+    QFileDialog,
+    QSizePolicy,
 )
 
 from db.database import Database
 from ui.widgets import section_title, hline, primary_btn, field
 
+DATE_FORMAT_OPTIONS: list[tuple[str, str]] = [
+    ("YYYY", "Year only (2020)"),
+    ("MMM YYYY", "Month Year (Mar 2020)"),
+    ("MM/YYYY", "Numeric Month/Year (03/2020)"),
+]
+
 SECTION_LABELS: dict[str, str] = {
-    "contact":    "Contact",
-    "summary":    "Summary",
+    "contact": "Contact",
+    "summary": "Summary",
     "experience": "Experience",
-    "education":  "Education",
-    "projects":   "Projects",
-    "keywords":   "Skills / Keywords",
+    "education": "Education",
+    "projects": "Projects",
+    "keywords": "Skills / Keywords",
 }
 
 
 # ── section order widget ──────────────────────────────────────────────
+
 
 class SectionOrderWidget(QWidget):
     def __init__(self, order: list[str], enabled: dict[str, bool], parent=None):
@@ -101,6 +116,7 @@ class SectionOrderWidget(QWidget):
 
 # ── settings view ─────────────────────────────────────────────────────
 
+
 class SettingsView(QWidget):
     def __init__(self, db: Database, parent=None):
         super().__init__(parent)
@@ -136,12 +152,27 @@ class SettingsView(QWidget):
         folder_row.addWidget(browse_btn)
         outer.addLayout(folder_row)
 
-        outer.addWidget(QLabel("Filename template  (tokens: {company}  {position}  {date})"))
+        outer.addWidget(
+            QLabel("Filename template  (tokens: {company}  {position}  {date})")
+        )
         self._pdf_filename = field("{company}_{position}_{date}")
         self._pdf_filename.setText(
             settings.get("pdf_filename_template") or "{company}_{position}_{date}"
         )
         outer.addWidget(self._pdf_filename)
+
+        # date display format
+        outer.addSpacing(4)
+        outer.addWidget(hline())
+        outer.addWidget(QLabel("Date display format"))
+        self._date_fmt_combo = QComboBox()
+        self._date_fmt_combo.setFixedWidth(300)
+        current_fmt = settings.get("date_format") or "YYYY"
+        for fmt_val, fmt_label in DATE_FORMAT_OPTIONS:
+            self._date_fmt_combo.addItem(fmt_label, userData=fmt_val)
+            if fmt_val == current_fmt:
+                self._date_fmt_combo.setCurrentIndex(self._date_fmt_combo.count() - 1)
+        outer.addWidget(self._date_fmt_combo)
 
         # section order
         outer.addSpacing(4)
@@ -153,13 +184,19 @@ class SettingsView(QWidget):
         hint.setStyleSheet("color: #a6adc8;")
         outer.addWidget(hint)
 
-        order_raw   = settings.get("section_order") or \
-            '["contact","summary","experience","education","projects","keywords"]'
-        enabled_raw = settings.get("sections_enabled") or \
-            '{"contact":1,"summary":1,"experience":1,"education":1,"projects":1,"keywords":1}'
+        order_raw = (
+            settings.get("section_order")
+            or '["contact","summary","experience","education","projects","keywords"]'
+        )
+        enabled_raw = (
+            settings.get("sections_enabled")
+            or '{"contact":1,"summary":1,"experience":1,"education":1,"projects":1,"keywords":1}'
+        )
 
-        order   = [k for k in json.loads(order_raw) if k != "custom"]
-        enabled = {k: bool(v) for k, v in json.loads(enabled_raw).items() if k != "custom"}
+        order = [k for k in json.loads(order_raw) if k != "custom"]
+        enabled = {
+            k: bool(v) for k, v in json.loads(enabled_raw).items() if k != "custom"
+        }
 
         for key in SECTION_LABELS:
             if key not in order:
@@ -191,15 +228,16 @@ class SettingsView(QWidget):
             self._pdf_folder.setText(folder)
 
     def _save(self):
-        order   = self._section_order.get_order()
+        order = self._section_order.get_order()
         enabled = self._section_order.get_enabled()
         tmpl_id = self._tmpl_combo.currentData()
         self.db.save_settings(
-            section_order         = json.dumps(order),
-            sections_enabled      = json.dumps({k: int(v) for k, v in enabled.items()}),
-            default_template_id   = tmpl_id,
-            pdf_output_folder     = self._pdf_folder.text().strip() or None,
-            pdf_filename_template = self._pdf_filename.text().strip()
-                                    or "{company}_{position}_{date}",
+            section_order=json.dumps(order),
+            sections_enabled=json.dumps({k: int(v) for k, v in enabled.items()}),
+            default_template_id=tmpl_id,
+            pdf_output_folder=self._pdf_folder.text().strip() or None,
+            pdf_filename_template=self._pdf_filename.text().strip()
+            or "{company}_{position}_{date}",
+            date_format=self._date_fmt_combo.currentData() or "YYYY",
         )
         QMessageBox.information(self, "Saved", "Settings saved.")
