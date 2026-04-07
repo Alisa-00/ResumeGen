@@ -10,10 +10,26 @@ from datetime import date
 
 from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool, QRunnable, QObject
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QLabel, QLineEdit, QPushButton, QCheckBox, QButtonGroup, QRadioButton,
-    QScrollArea, QFrame, QDialog, QListWidget, QListWidgetItem,
-    QDialogButtonBox, QMessageBox, QSizePolicy, QTextEdit, QComboBox,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QSplitter,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QCheckBox,
+    QButtonGroup,
+    QRadioButton,
+    QScrollArea,
+    QFrame,
+    QDialog,
+    QListWidget,
+    QListWidgetItem,
+    QDialogButtonBox,
+    QMessageBox,
+    QSizePolicy,
+    QTextEdit,
+    QComboBox,
 )
 
 from db.database import Database
@@ -21,17 +37,18 @@ from pdf.display import PdfPreviewWidget
 from ui.widgets import primary_btn, flat_link_btn, small_danger_btn
 
 SECTION_LABELS = {
-    "contact":    "Contact",
-    "summary":    "Summary",
+    "contact": "Contact",
+    "summary": "Summary",
     "experience": "Experience",
-    "education":  "Education",
-    "projects":   "Projects",
-    "keywords":   "Skills / Keywords",
+    "education": "Education",
+    "projects": "Projects",
+    "keywords": "Skills / Keywords",
 }
 DEBOUNCE_MS = 500
 
 
 # ── shared layout helpers ─────────────────────────────────────────────
+
 
 def _reorder_layout(layout, items: list) -> None:
     """Remove all items from layout then reinsert in current list order."""
@@ -41,8 +58,9 @@ def _reorder_layout(layout, items: list) -> None:
         layout.insertWidget(i, item)
 
 
-def _toggle_expand(btn: QPushButton, body: QWidget,
-                   expanded: str, collapsed: str) -> None:
+def _toggle_expand(
+    btn: QPushButton, body: QWidget, expanded: str, collapsed: str
+) -> None:
     """Toggle body visibility and update btn text accordingly."""
     v = not body.isVisible()
     body.setVisible(v)
@@ -51,20 +69,28 @@ def _toggle_expand(btn: QPushButton, body: QWidget,
 
 # ── worker ────────────────────────────────────────────────────────────
 
+
 class _Sig(QObject):
-    done  = Signal(bytes)
+    done = Signal(bytes)
     error = Signal(str)
+
 
 class _Task(QRunnable):
     def __init__(self, fn, *args):
         super().__init__()
-        self.fn = fn; self.args = args; self.sigs = _Sig()
+        self.fn = fn
+        self.args = args
+        self.sigs = _Sig()
+
     def run(self):
-        try:    self.sigs.done.emit(self.fn(*self.args))
-        except Exception as e: self.sigs.error.emit(str(e))
+        try:
+            self.sigs.done.emit(self.fn(*self.args))
+        except Exception as e:
+            self.sigs.error.emit(str(e))
 
 
 # ── picker dialog ─────────────────────────────────────────────────────
+
 
 class _PickerDialog(QDialog):
     def __init__(self, title: str, items: list[tuple[int, str]], parent=None):
@@ -79,8 +105,7 @@ class _PickerDialog(QDialog):
             self._list.addItem(item)
         layout.addWidget(self._list)
         btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok |
-            QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
@@ -93,14 +118,16 @@ class _PickerDialog(QDialog):
 
 # ── bullet sub-item ───────────────────────────────────────────────────
 
+
 class _BulletSubItem(QWidget):
-    changed    = Signal()
-    removed    = Signal(object)
-    moved_up   = Signal(object)
+    changed = Signal()
+    removed = Signal(object)
+    moved_up = Signal(object)
     moved_down = Signal(object)
 
-    def __init__(self, bullet: dict | None = None,
-                 override: str | None = None, parent=None):
+    def __init__(
+        self, bullet: dict | None = None, override: str | None = None, parent=None
+    ):
         super().__init__(parent)
         self.bullet_id = bullet["id"] if bullet else None
         self._original = bullet["text"] if bullet else ""
@@ -111,7 +138,8 @@ class _BulletSubItem(QWidget):
 
         for arrow, sig in [("▲", self.moved_up), ("▼", self.moved_down)]:
             btn = QPushButton(arrow)
-            btn.setFixedSize(48, 48); btn.setFlat(True)
+            btn.setFixedSize(48, 48)
+            btn.setFlat(True)
             btn.setStyleSheet(
                 "QPushButton { font-size: 22px; color: #89b4fa;"
                 " background-color: #313244; border-radius: 6px; border: none;"
@@ -130,8 +158,11 @@ class _BulletSubItem(QWidget):
         hl.addWidget(self.edit, 1)
 
         rst = QPushButton("↺")
-        rst.setFixedSize(28, 28); rst.setFlat(True)
-        rst.setStyleSheet("QPushButton { color: #a6adc8; background: transparent; border: none; min-height:0; min-width:0; }")
+        rst.setFixedSize(28, 28)
+        rst.setFlat(True)
+        rst.setStyleSheet(
+            "QPushButton { color: #a6adc8; background: transparent; border: none; min-height:0; min-width:0; }"
+        )
         rst.setToolTip("Reset to original")
         rst.clicked.connect(lambda: self.edit.setText(self._original))
         hl.addWidget(rst)
@@ -140,7 +171,9 @@ class _BulletSubItem(QWidget):
         rm.clicked.connect(lambda: self.removed.emit(self))
         hl.addWidget(rm)
 
-    def current_text(self) -> str: return self.edit.toPlainText()
+    def current_text(self) -> str:
+        return self.edit.toPlainText()
+
     def is_overridden(self) -> bool:
         return self.bullet_id is not None and self.edit.toPlainText() != self._original
 
@@ -148,8 +181,13 @@ class _BulletSubItem(QWidget):
 class _BulletSubList(QWidget):
     changed = Signal()
 
-    def __init__(self, bullets: list[dict], overrides: dict[int, str],
-                 all_bullets: list[dict], parent=None):
+    def __init__(
+        self,
+        bullets: list[dict],
+        overrides: dict[int, str],
+        all_bullets: list[dict],
+        parent=None,
+    ):
         super().__init__(parent)
         self._all_bullets = all_bullets
         self._items: list[_BulletSubItem] = []
@@ -188,19 +226,25 @@ class _BulletSubList(QWidget):
     def _move(self, item: _BulletSubItem, delta: int):
         idx = self._items.index(item)
         new = idx + delta
-        if new < 0 or new >= len(self._items): return
+        if new < 0 or new >= len(self._items):
+            return
         self._items[idx], self._items[new] = self._items[new], self._items[idx]
         _reorder_layout(self._list_layout, self._items)
         self.changed.emit()
 
     def _pick_bullet(self):
         current_ids = {i.bullet_id for i in self._items if i.bullet_id is not None}
-        available   = [
+        available = [
             (bp["id"], bp["text"][:70] + ("…" if len(bp["text"]) > 70 else ""))
-            for bp in self._all_bullets if bp["id"] not in current_ids
+            for bp in self._all_bullets
+            if bp["id"] not in current_ids
         ]
         if not available:
-            QMessageBox.information(self.window(), "Nothing to add", "All bullet points are already included.")
+            QMessageBox.information(
+                self.window(),
+                "Nothing to add",
+                "All bullet points are already included.",
+            )
             return
         dlg = _PickerDialog("Add Bullet Point", available, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -219,11 +263,12 @@ class _BulletSubList(QWidget):
 
 # ── sub-item base ─────────────────────────────────────────────────────
 
+
 class _SubItem(QWidget):
-    removed    = Signal(object)
-    moved_up   = Signal(object)
+    removed = Signal(object)
+    moved_up = Signal(object)
     moved_down = Signal(object)
-    changed    = Signal()
+    changed = Signal()
 
     def __init__(self, item_id: int, header_text: str, parent=None):
         super().__init__(parent)
@@ -234,14 +279,17 @@ class _SubItem(QWidget):
         root.setSpacing(0)
 
         hdr = QWidget()
-        hdr.setStyleSheet("QWidget { background: #252535; border: 1px solid #313244; border-radius: 3px; }")
+        hdr.setStyleSheet(
+            "QWidget { background: #252535; border: 1px solid #313244; border-radius: 3px; }"
+        )
         hl = QHBoxLayout(hdr)
         hl.setContentsMargins(8, 4, 8, 4)
         hl.setSpacing(6)
 
         for arrow, sig in [("▲", self.moved_up), ("▼", self.moved_down)]:
             btn = QPushButton(arrow)
-            btn.setFixedSize(48, 48); btn.setFlat(True)
+            btn.setFixedSize(48, 48)
+            btn.setFlat(True)
             btn.setStyleSheet(
                 "QPushButton { font-size: 22px; color: #89b4fa;"
                 " background-color: #313244; border-radius: 6px; border: none;"
@@ -256,7 +304,8 @@ class _SubItem(QWidget):
         hl.addWidget(lbl, 1)
 
         self._expand_btn = QPushButton("▶ Edit")
-        self._expand_btn.setFixedHeight(48); self._expand_btn.setFlat(True)
+        self._expand_btn.setFixedHeight(48)
+        self._expand_btn.setFlat(True)
         self._expand_btn.setStyleSheet(
             "QPushButton { color: #89b4fa; font-size: 20px; padding: 0 8px;"
             " background: transparent; border: none; min-height: 0; }"
@@ -270,7 +319,9 @@ class _SubItem(QWidget):
         hl.addWidget(rm)
 
         self._body = QWidget()
-        self._body.setStyleSheet("QWidget { background: #181825; border: 1px solid #313244; border-top: none; border-radius: 0 0 3px 3px; }")
+        self._body.setStyleSheet(
+            "QWidget { background: #181825; border: 1px solid #313244; border-top: none; border-radius: 0 0 3px 3px; }"
+        )
         self._body_layout = QVBoxLayout(self._body)
         self._body_layout.setContentsMargins(12, 8, 12, 8)
         self._body_layout.setSpacing(6)
@@ -284,19 +335,23 @@ class _SubItem(QWidget):
 
     def _add_body_row(self, label: str, widget: QWidget):
         row = QHBoxLayout()
-        lbl = QLabel(label); lbl.setFixedWidth(90)
+        lbl = QLabel(label)
+        lbl.setFixedWidth(90)
         lbl.setStyleSheet("color: #a6adc8; font-size: 16px;")
-        row.addWidget(lbl); row.addWidget(widget, 1)
+        row.addWidget(lbl)
+        row.addWidget(widget, 1)
         self._body_layout.addLayout(row)
 
 
 # ── section content widgets ───────────────────────────────────────────
 
+
 class _ContactContent(QWidget):
     changed = Signal()
 
-    def __init__(self, contact: dict, websites: list[dict],
-                 all_websites: list[dict], parent=None):
+    def __init__(
+        self, contact: dict, websites: list[dict], all_websites: list[dict], parent=None
+    ):
         super().__init__(parent)
         self._all_websites = all_websites
         self._site_rows: list[tuple[dict, QWidget, QLineEdit]] = []
@@ -307,9 +362,9 @@ class _ContactContent(QWidget):
 
         self._fields: dict[str, QLineEdit] = {}
         for key, label, placeholder in [
-            ("name",     "Name",     "Full name"),
-            ("email",    "Email",    "email@example.com"),
-            ("phone",    "Phone",    "+1 555 000 0000"),
+            ("name", "Name", "Full name"),
+            ("email", "Email", "email@example.com"),
+            ("phone", "Phone", "+1 555 000 0000"),
             ("location", "Location", "City, Country"),
         ]:
             row = QHBoxLayout()
@@ -330,7 +385,9 @@ class _ContactContent(QWidget):
             root.addLayout(row)
 
         lbl_sites = QLabel("Websites")
-        lbl_sites.setStyleSheet("color: #a6adc8; font-size: 18px; font-weight: bold; margin-top: 4px; border: none;")
+        lbl_sites.setStyleSheet(
+            "color: #a6adc8; font-size: 18px; font-weight: bold; margin-top: 4px; border: none;"
+        )
         root.addWidget(lbl_sites)
 
         self._sites_layout = QVBoxLayout()
@@ -380,13 +437,16 @@ class _ContactContent(QWidget):
     def _pick_site(self):
         active_labels = {s.get("label") for s, _, _ in self._site_rows}
         available = [
-            (i, f"{s.get('label','')} — {s.get('url','')}")
+            (i, f"{s.get('label', '')} — {s.get('url', '')}")
             for i, s in enumerate(self._all_websites)
             if s.get("label") not in active_labels
         ]
         if not available:
-            QMessageBox.information(self.window(), "No more websites",
-                "All saved websites are already included. Add more in the Contact section.")
+            QMessageBox.information(
+                self.window(),
+                "No more websites",
+                "All saved websites are already included. Add more in the Contact section.",
+            )
             return
         dlg = _PickerDialog("Add Website", available, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -395,19 +455,21 @@ class _ContactContent(QWidget):
                 self._add_site_row(self._all_websites[idx])
 
     def get_data(self) -> tuple[dict, list[dict]]:
-        contact  = {k: f.text().strip() for k, f in self._fields.items()}
-        websites = [
-            {**s, "url": e.text().strip()}
-            for s, _, e in self._site_rows
-        ]
+        contact = {k: f.text().strip() for k, f in self._fields.items()}
+        websites = [{**s, "url": e.text().strip()} for s, _, e in self._site_rows]
         return contact, websites
 
 
 class _SummaryContent(QWidget):
     changed = Signal()
 
-    def __init__(self, profiles: list[dict], current_profile_id: int,
-                 saved_text_override: str | None = None, parent=None):
+    def __init__(
+        self,
+        profiles: list[dict],
+        current_profile_id: int,
+        saved_text_override: str | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._group = QButtonGroup(self)
 
@@ -416,7 +478,9 @@ class _SummaryContent(QWidget):
         root.setSpacing(6)
 
         if not any(p.get("summary") for p in profiles):
-            root.addWidget(QLabel("No summaries saved. Add one in the Summary section."))
+            root.addWidget(
+                QLabel("No summaries saved. Add one in the Summary section.")
+            )
             self._edit = QTextEdit()
             self._edit.setFixedHeight(120)
             self._edit.setStyleSheet(
@@ -443,9 +507,12 @@ class _SummaryContent(QWidget):
             if not summary:
                 continue
             rb_row = QWidget()
-            rb_row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            rb_row.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+            )
             rbl = QHBoxLayout(rb_row)
-            rbl.setContentsMargins(4, 2, 4, 2); rbl.setSpacing(8)
+            rbl.setContentsMargins(4, 2, 4, 2)
+            rbl.setSpacing(8)
             rb = QRadioButton()
             rb.setStyleSheet("""
                 QRadioButton { border: none; background: transparent; }
@@ -454,15 +521,18 @@ class _SummaryContent(QWidget):
                 QRadioButton::indicator:checked { background: #89b4fa; }
                 QRadioButton::indicator:hover { border-color: #cdd6f4; }
             """)
-            rb.setProperty("profile_id",    p["id"])
-            rb.setProperty("summary_text",  summary)
+            rb.setProperty("profile_id", p["id"])
+            rb.setProperty("summary_text", summary)
             self._group.addButton(rb)
             lbl = QLabel(f"<b>{p['name']}</b>  —  {summary}")
-            lbl.setStyleSheet("QLabel { font-size: 15px; color: #a6adc8; border: none; background: transparent; }")
+            lbl.setStyleSheet(
+                "QLabel { font-size: 15px; color: #a6adc8; border: none; background: transparent; }"
+            )
             lbl.setWordWrap(True)
             lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
             lbl.mousePressEvent = lambda _e, r=rb: r.setChecked(True)
-            rbl.addWidget(rb); rbl.addWidget(lbl, 1)
+            rbl.addWidget(rb)
+            rbl.addWidget(lbl, 1)
             radio_layout.addWidget(rb_row)
 
         root.addWidget(radio_container)
@@ -493,8 +563,11 @@ class _SummaryContent(QWidget):
             chosen_btn = self._group.buttons()[0]
 
         if chosen_btn:
-            initial = saved_text_override if saved_text_override is not None \
-                      else chosen_btn.property("summary_text")
+            initial = (
+                saved_text_override
+                if saved_text_override is not None
+                else chosen_btn.property("summary_text")
+            )
             self._edit.blockSignals(True)
             self._edit.setPlainText(initial)
             self._edit.blockSignals(False)
@@ -516,41 +589,95 @@ class _SummaryContent(QWidget):
 
 
 class _ExperienceItem(_SubItem):
-    def __init__(self, job: dict, overrides: dict[int, str],
-                 included_bullet_ids: list[int] | None = None, parent=None):
+    def __init__(
+        self,
+        job: dict,
+        overrides: dict[int, str],
+        exp_override: dict | None = None,
+        included_bullet_ids: list[int] | None = None,
+        parent=None,
+    ):
         label = f"{job['position_name']} — {job['organization_name']}"
         super().__init__(job["id"], label, parent)
+        self._original = job
+        eo = exp_override or {}
         all_bullets = job.get("bullet_points", [])
         if included_bullet_ids is not None:
             id_order = {bid: i for i, bid in enumerate(included_bullet_ids)}
             active = sorted(
                 [b for b in all_bullets if b["id"] in id_order],
-                key=lambda b: id_order[b["id"]]
+                key=lambda b: id_order[b["id"]],
             )
         else:
             active = all_bullets
+
+        # Per-application company info (shown first)
+        meta_lbl = QLabel("Per-application company info")
+        meta_lbl.setStyleSheet("color: #a6adc8; font-size: 16px; font-weight: bold;")
+        self._body_layout.addWidget(meta_lbl)
+
+        self._f_desc = QLineEdit(eo.get("organization_description") or "")
+        self._f_desc.setPlaceholderText("e.g. startup working on X")
+        self._f_desc.setStyleSheet(
+            "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
+        )
+        self._f_desc.textChanged.connect(self.changed)
+        self._add_body_row("Description", self._f_desc)
+
+        self._f_url = QLineEdit(eo.get("organization_website") or "")
+        self._f_url.setPlaceholderText("https://company.com")
+        self._f_url.setStyleSheet(
+            "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
+        )
+        self._f_url.textChanged.connect(self.changed)
+        self._add_body_row("Website", self._f_url)
+
+        # Divider before bullets
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: #313244; margin-top: 8px;")
+        self._body_layout.addWidget(sep)
+
+        # Bullet points section
         self._bullet_list = _BulletSubList(active, overrides, all_bullets)
         self._bullet_list.changed.connect(self.changed)
         self._body_layout.addWidget(self._bullet_list)
 
-    def get_overrides(self) -> dict[int, str]:
-        return self._bullet_list.get_overrides()
+    def get_overrides(self) -> tuple[dict[int, str], dict]:
+        bullet_ovs = self._bullet_list.get_overrides()
+        meta = {}
+        desc = self._f_desc.text().strip()
+        url = self._f_url.text().strip()
+        base_desc = (self._original.get("organization_description") or "").strip()
+        base_url = (self._original.get("organization_website") or "").strip()
+        if desc != base_desc:
+            meta["organization_description"] = desc
+        if url != base_url:
+            meta["organization_website"] = url
+        return bullet_ovs, meta
+
+    def get_meta_override(self) -> dict:
+        """Return current metadata values for preview regeneration (including blanks)."""
+        return {
+            "organization_description": self._f_desc.text().strip(),
+            "organization_website": self._f_url.text().strip(),
+        }
 
 
 class _EducationItem(_SubItem):
     def __init__(self, edu: dict, override: dict | None = None, parent=None):
-        label = f"{edu.get('degree','')} — {edu.get('school','')}"
+        label = f"{edu.get('degree', '')} — {edu.get('school', '')}"
         super().__init__(edu["id"], label, parent)
         self._original = edu
         o = override or {}
 
         for field_key, label_text, placeholder in [
-            ("degree",   "Degree",   "e.g. B.Sc."),
-            ("school",   "School",   "e.g. MIT"),
+            ("degree", "Degree", "e.g. B.Sc."),
+            ("school", "School", "e.g. MIT"),
             ("location", "Location", "e.g. Boston, MA"),
-            ("field",    "Field",    "e.g. Computer Science"),
+            ("field", "Field", "e.g. Computer Science"),
             ("start_date", "Start", "YYYY-MM"),
-            ("end_date",   "End",   "YYYY-MM"),
+            ("end_date", "End", "YYYY-MM"),
         ]:
             val = o.get(field_key, edu.get(field_key) or "")
             w = QLineEdit(val)
@@ -567,7 +694,7 @@ class _EducationItem(_SubItem):
         fields = ["degree", "school", "location", "field", "start_date", "end_date"]
         result = {}
         for f in fields:
-            current  = getattr(self, f"_f_{f}").text().strip()
+            current = getattr(self, f"_f_{f}").text().strip()
             original = (self._original.get(f) or "").strip()
             if current != original:
                 result[f] = current
@@ -576,7 +703,7 @@ class _EducationItem(_SubItem):
 
 class _ProjectItem(_SubItem):
     def __init__(self, proj: dict, parent=None):
-        super().__init__(proj["id"], proj.get("name",""), parent)
+        super().__init__(proj["id"], proj.get("name", ""), parent)
         self._original_name = proj.get("name") or ""
 
         # replace the read-only header label with an editable QLineEdit
@@ -595,10 +722,11 @@ class _ProjectItem(_SubItem):
                 w.deleteLater()
                 break
 
-        for lbl, key in [("Link","link"),("Start","start_date")]:
+        for lbl, key in [("Link", "link"), ("Start", "start_date")]:
             val = proj.get(key) or ""
             if val:
-                w = QLabel(val); w.setStyleSheet("color: #a6adc8; font-size: 16px;")
+                w = QLabel(val)
+                w.setStyleSheet("color: #a6adc8; font-size: 16px;")
                 w.setWordWrap(True)
                 self._add_body_row(lbl, w)
 
@@ -644,8 +772,10 @@ class _SubList(QWidget):
         self.changed.emit()
 
     def _move(self, item: _SubItem, delta: int):
-        idx = self._items.index(item); new = idx + delta
-        if new < 0 or new >= len(self._items): return
+        idx = self._items.index(item)
+        new = idx + delta
+        if new < 0 or new >= len(self._items):
+            return
         self._items[idx], self._items[new] = self._items[new], self._items[idx]
         _reorder_layout(self._layout, self._items)
         self.changed.emit()
@@ -657,88 +787,133 @@ class _SubList(QWidget):
 class _ExperienceContent(QWidget):
     changed = Signal()
 
-    def __init__(self, experiences: list[dict], included_ids: list[int] | None,
-                 overrides: dict[int, str],
-                 included_bullets_map: dict[int, list[int]] | None = None,
-                 parent=None):
+    def __init__(
+        self,
+        experiences: list[dict],
+        included_ids: list[int] | None,
+        overrides: dict[int, str],
+        included_bullets_map: dict[int, list[int]] | None = None,
+        exp_overrides: dict[int, dict] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._all = experiences
         self._overrides = overrides
-        self._included_bullets_map = included_bullets_map or {}
-        root = QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(4)
-        self._sublist = _SubList(); self._sublist.changed.connect(self.changed)
+        self._exp_overrides = exp_overrides or {}
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+        self._sublist = _SubList()
+        self._sublist.changed.connect(self.changed)
         root.addWidget(self._sublist)
-        add_btn = flat_link_btn("+ Add experience"); add_btn.clicked.connect(self._add_picker)
+        add_btn = flat_link_btn("+ Add experience")
+        add_btn.clicked.connect(self._add_picker)
         root.addWidget(add_btn)
         shown = experiences
         if included_ids is not None:
             id_map = {e["id"]: e for e in experiences}
-            shown  = [id_map[i] for i in included_ids if i in id_map]
-        for job in shown: self._add_item(job)
+            shown = [id_map[i] for i in included_ids if i in id_map]
+        for job in shown:
+            self._add_item(job)
 
     def _add_item(self, job: dict):
-        bullet_ids = self._included_bullets_map.get(job["id"])
-        item = _ExperienceItem(job, self._overrides, bullet_ids)
+        bullet_ids = (
+            self._included_bullets_map.get(job["id"])
+            if hasattr(self, "_included_bullets_map")
+            else None
+        )
+        exp_override = self._exp_overrides.get(job["id"])
+        item = _ExperienceItem(job, self._overrides, exp_override, bullet_ids)
         self._sublist.add_item(item)
 
     def _add_picker(self):
         current = set(self._sublist.item_ids())
-        avail   = [(e["id"], f"{e['position_name']} — {e['organization_name']}")
-                   for e in self._all if e["id"] not in current]
+        avail = [
+            (e["id"], f"{e['position_name']} — {e['organization_name']}")
+            for e in self._all
+            if e["id"] not in current
+        ]
         if not avail:
-            QMessageBox.information(self.window(),"Nothing to add","All experiences are already included.")
+            QMessageBox.information(
+                self.window(), "Nothing to add", "All experiences are already included."
+            )
             return
         dlg = _PickerDialog("Add Experience", avail, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             eid = dlg.selected_id()
             if eid:
                 job = next(e for e in self._all if e["id"] == eid)
-                self._add_item(job); self.changed.emit()
+                self._add_item(job)
+                self.changed.emit()
 
-    def included_ids(self) -> list[int]: return self._sublist.item_ids()
-    def get_overrides(self) -> dict[int, str]:
-        overrides = {}
+    def included_ids(self) -> list[int]:
+        return self._sublist.item_ids()
+
+    def get_overrides(self) -> tuple[dict[int, str], dict[int, dict]]:
+        bullet_overrides = {}
+        meta_overrides = {}
         for item in self._sublist._items:
             if isinstance(item, _ExperienceItem):
-                overrides.update(item.get_overrides())
-        return overrides
+                bovs, meta = item.get_overrides()
+                bullet_overrides.update(bovs)
+                if meta:
+                    meta_overrides[item.item_id] = meta
+        return bullet_overrides, meta_overrides
 
 
 class _EducationContent(QWidget):
     changed = Signal()
 
-    def __init__(self, education: list[dict], included_ids: list[int] | None,
-                 overrides: dict[int, dict] | None = None, parent=None):
+    def __init__(
+        self,
+        education: list[dict],
+        included_ids: list[int] | None,
+        overrides: dict[int, dict] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._all = education
         self._overrides = overrides or {}
-        root = QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(4)
-        self._sublist = _SubList(); self._sublist.changed.connect(self.changed)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+        self._sublist = _SubList()
+        self._sublist.changed.connect(self.changed)
         root.addWidget(self._sublist)
-        add_btn = flat_link_btn("+ Add education"); add_btn.clicked.connect(self._add_picker)
+        add_btn = flat_link_btn("+ Add education")
+        add_btn.clicked.connect(self._add_picker)
         root.addWidget(add_btn)
         shown = education
         if included_ids is not None:
             id_map = {e["id"]: e for e in education}
-            shown  = [id_map[i] for i in included_ids if i in id_map]
+            shown = [id_map[i] for i in included_ids if i in id_map]
         for edu in shown:
             self._sublist.add_item(_EducationItem(edu, self._overrides.get(edu["id"])))
 
     def _add_picker(self):
         current = set(self._sublist.item_ids())
-        avail   = [(e["id"], f"{e.get('degree','')} — {e.get('school','')}")
-                   for e in self._all if e["id"] not in current]
+        avail = [
+            (e["id"], f"{e.get('degree', '')} — {e.get('school', '')}")
+            for e in self._all
+            if e["id"] not in current
+        ]
         if not avail:
-            QMessageBox.information(self.window(),"Nothing to add","All education entries are already included.")
+            QMessageBox.information(
+                self.window(),
+                "Nothing to add",
+                "All education entries are already included.",
+            )
             return
         dlg = _PickerDialog("Add Education", avail, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             eid = dlg.selected_id()
             if eid:
                 edu = next(e for e in self._all if e["id"] == eid)
-                self._sublist.add_item(_EducationItem(edu)); self.changed.emit()
+                self._sublist.add_item(_EducationItem(edu))
+                self.changed.emit()
 
-    def included_ids(self) -> list[int]: return self._sublist.item_ids()
+    def included_ids(self) -> list[int]:
+        return self._sublist.item_ids()
 
     def get_overrides(self) -> dict[int, dict]:
         result = {}
@@ -753,41 +928,57 @@ class _EducationContent(QWidget):
 class _ProjectsContent(QWidget):
     changed = Signal()
 
-    def __init__(self, projects: list[dict], included_ids: list[int] | None, parent=None):
+    def __init__(
+        self, projects: list[dict], included_ids: list[int] | None, parent=None
+    ):
         super().__init__(parent)
         self._all = projects
-        root = QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(4)
-        self._sublist = _SubList(); self._sublist.changed.connect(self.changed)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+        self._sublist = _SubList()
+        self._sublist.changed.connect(self.changed)
         root.addWidget(self._sublist)
-        add_btn = flat_link_btn("+ Add project"); add_btn.clicked.connect(self._add_picker)
+        add_btn = flat_link_btn("+ Add project")
+        add_btn.clicked.connect(self._add_picker)
         root.addWidget(add_btn)
         shown = projects
         if included_ids is not None:
             id_map = {p["id"]: p for p in projects}
-            shown  = [id_map[i] for i in included_ids if i in id_map]
-        for proj in shown: self._sublist.add_item(_ProjectItem(proj))
+            shown = [id_map[i] for i in included_ids if i in id_map]
+        for proj in shown:
+            self._sublist.add_item(_ProjectItem(proj))
 
     def _add_picker(self):
         current = set(self._sublist.item_ids())
-        avail   = [(p["id"], p.get("name","")) for p in self._all if p["id"] not in current]
+        avail = [
+            (p["id"], p.get("name", "")) for p in self._all if p["id"] not in current
+        ]
         if not avail:
-            QMessageBox.information(self.window(),"Nothing to add","All projects are already included.")
+            QMessageBox.information(
+                self.window(), "Nothing to add", "All projects are already included."
+            )
             return
         dlg = _PickerDialog("Add Project", avail, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             pid = dlg.selected_id()
             if pid:
                 proj = next(p for p in self._all if p["id"] == pid)
-                self._sublist.add_item(_ProjectItem(proj)); self.changed.emit()
+                self._sublist.add_item(_ProjectItem(proj))
+                self.changed.emit()
 
-    def included_ids(self) -> list[int]: return self._sublist.item_ids()
+    def included_ids(self) -> list[int]:
+        return self._sublist.item_ids()
 
     def get_text_overrides(self) -> dict[int, str]:
         overrides = {}
         for item in self._sublist._items:
             if isinstance(item, _ProjectItem):
-                text     = item.get_text()
-                original = next((p.get("text") or "" for p in self._all if p["id"] == item.item_id), "")
+                text = item.get_text()
+                original = next(
+                    (p.get("text") or "" for p in self._all if p["id"] == item.item_id),
+                    "",
+                )
                 if text != original.strip():
                     overrides[item.item_id] = text
         return overrides
@@ -796,8 +987,11 @@ class _ProjectsContent(QWidget):
         overrides = {}
         for item in self._sublist._items:
             if isinstance(item, _ProjectItem):
-                name     = item.get_name()
-                original = next((p.get("name") or "" for p in self._all if p["id"] == item.item_id), "")
+                name = item.get_name()
+                original = next(
+                    (p.get("name") or "" for p in self._all if p["id"] == item.item_id),
+                    "",
+                )
                 if name != original.strip():
                     overrides[item.item_id] = name
         return overrides
@@ -808,10 +1002,12 @@ class _KeywordsContent(QWidget):
 
     def __init__(self, all_keywords: list[dict], initial_ids: list[int], parent=None):
         super().__init__(parent)
-        self._all_kw     = all_keywords
+        self._all_kw = all_keywords
         self._active_ids = list(initial_ids)
 
-        root = QVBoxLayout(self); root.setContentsMargins(0,4,0,0); root.setSpacing(4)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 4, 0, 0)
+        root.setSpacing(4)
 
         # picker combo at the top — consistent with other keyword views
         pick_row = QHBoxLayout()
@@ -894,8 +1090,9 @@ class _KeywordsContent(QWidget):
     def _relax_height(self):
         count = self._list.count()
         row_h = self._list.sizeHintForRow(0) if count > 0 else 36
-        self._list.setFixedHeight(row_h + 4 if count == 0
-                                  else self._list.sizeHint().height())
+        self._list.setFixedHeight(
+            row_h + 4 if count == 0 else self._list.sizeHint().height()
+        )
 
     def _remove(self, kw_id: int):
         if kw_id in self._active_ids:
@@ -913,21 +1110,28 @@ class _KeywordsContent(QWidget):
 
 # ── section row ───────────────────────────────────────────────────────
 
+
 class SectionRow(QWidget):
-    toggled   = Signal()
-    move_up   = Signal()
+    toggled = Signal()
+    move_up = Signal()
     move_down = Signal()
 
     def __init__(self, key: str, enabled: bool, content_widget: QWidget, parent=None):
         super().__init__(parent)
-        self.key             = key
+        self.key = key
         self._content_widget = content_widget
 
-        root = QVBoxLayout(self); root.setContentsMargins(0,0,0,2); root.setSpacing(0)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 2)
+        root.setSpacing(0)
 
         hdr = QWidget()
-        hdr.setStyleSheet("QWidget { background: #1e1e2e; border: 1px solid #313244; border-radius: 4px; }")
-        hl = QHBoxLayout(hdr); hl.setContentsMargins(8,6,10,6); hl.setSpacing(6)
+        hdr.setStyleSheet(
+            "QWidget { background: #1e1e2e; border: 1px solid #313244; border-radius: 4px; }"
+        )
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(8, 6, 10, 6)
+        hl.setSpacing(6)
 
         for arrow, sig in [("▲", self.move_up), ("▼", self.move_down)]:
             btn = QPushButton(arrow)
@@ -960,11 +1164,14 @@ class SectionRow(QWidget):
             "QFrame { background: #181825; border: 1px solid #313244;"
             " border-top: none; border-radius: 0 0 4px 4px; }"
         )
-        bl = QVBoxLayout(self._body); bl.setContentsMargins(12,10,12,10); bl.setSpacing(6)
+        bl = QVBoxLayout(self._body)
+        bl.setContentsMargins(12, 10, 12, 10)
+        bl.setSpacing(6)
         bl.addWidget(content_widget)
         self._body.setVisible(False)
 
-        root.addWidget(hdr); root.addWidget(self._body)
+        root.addWidget(hdr)
+        root.addWidget(self._body)
 
         # wire checkbox after all widgets are constructed
         self.checkbox.stateChanged.connect(self.toggled)
@@ -995,15 +1202,16 @@ class SectionRow(QWidget):
 
 # ── section list ──────────────────────────────────────────────────────
 
+
 class SectionList(QWidget):
-    order_changed  = Signal()
+    order_changed = Signal()
     toggle_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._rows: list[SectionRow] = []
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(0,0,0,0)
+        self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(4)
         self._layout.addStretch()
 
@@ -1015,36 +1223,49 @@ class SectionList(QWidget):
         self._layout.insertWidget(self._layout.count() - 1, row)
 
     def _move(self, row: SectionRow, delta: int):
-        idx = self._rows.index(row); new = idx + delta
-        if new < 0 or new >= len(self._rows): return
+        idx = self._rows.index(row)
+        new = idx + delta
+        if new < 0 or new >= len(self._rows):
+            return
         self._rows[idx], self._rows[new] = self._rows[new], self._rows[idx]
         _reorder_layout(self._layout, self._rows)
         self.order_changed.emit()
 
-    def get_order(self) -> list[str]: return [r.key for r in self._rows]
-    def get_enabled(self) -> dict[str, bool]: return {r.key: r.is_enabled() for r in self._rows}
+    def get_order(self) -> list[str]:
+        return [r.key for r in self._rows]
+
+    def get_enabled(self) -> dict[str, bool]:
+        return {r.key: r.is_enabled() for r in self._rows}
 
     def get_content(self, key: str) -> QWidget | None:
         for row in self._rows:
-            if row.key == key: return row._content_widget
+            if row.key == key:
+                return row._content_widget
         return None
 
 
 # ── step 2 ────────────────────────────────────────────────────────────
 
+
 class StepPreview(QWidget):
     back_requested = Signal()
-    saved          = Signal(int)
+    saved = Signal(int)
 
-    def __init__(self, db: Database, db_path: Path, job_data: dict,
-                 application_id: int | None = None, parent=None):
+    def __init__(
+        self,
+        db: Database,
+        db_path: Path,
+        job_data: dict,
+        application_id: int | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
-        self.db             = db
-        self.db_path        = db_path
-        self.job_data       = job_data
+        self.db = db
+        self.db_path = db_path
+        self.job_data = job_data
         self.application_id = application_id
         self._pdf_bytes: bytes | None = None
-        self._regen_token   = 0
+        self._regen_token = 0
         self._active_tasks: set = set()
 
         self._bullet_overrides: dict[int, str] = {}
@@ -1053,9 +1274,9 @@ class StepPreview(QWidget):
             self._bullet_overrides = db.get_bullet_overrides(application_id)
             self._app = db.get_application(application_id)
 
-        self._resume_data    = db.get_resume_data(job_data["profile_id"])
-        self._all_kw         = db.get_keywords()
-        self._all_profiles   = db.get_profiles()
+        self._resume_data = db.get_resume_data(job_data["profile_id"])
+        self._all_kw = db.get_keywords()
+        self._all_profiles = db.get_profiles()
         self._profile_kw_ids = {k["id"] for k in self._resume_data["profile_keywords"]}
 
         self._debounce = QTimer()
@@ -1072,39 +1293,52 @@ class StepPreview(QWidget):
         self._schedule_regen()
 
     def _build_ui(self):
-        root = QVBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
         top = QWidget()
         top.setStyleSheet("background: #1e1e2e; border-bottom: 1px solid #313244;")
         top.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        tl = QHBoxLayout(top); tl.setContentsMargins(12,8,12,8); tl.setSpacing(10)
+        tl = QHBoxLayout(top)
+        tl.setContentsMargins(12, 8, 12, 8)
+        tl.setSpacing(10)
 
-        back = QPushButton("← Back"); back.setFlat(True)
+        back = QPushButton("← Back")
+        back.setFlat(True)
         back.setStyleSheet("color: #89b4fa;")
         back.clicked.connect(self.back_requested)
 
-        title = QLabel(f"<b>{self.job_data['position_name']}</b> @ {self.job_data['company_name']}")
+        title = QLabel(
+            f"<b>{self.job_data['position_name']}</b> @ {self.job_data['company_name']}"
+        )
         title.setStyleSheet("font-size: 20px; color: #cdd6f4;")
 
         self._status_lbl = QLabel("Ready")
         self._status_lbl.setStyleSheet("color: #a6adc8; font-size: 16px;")
 
         save_btn = primary_btn("Save Application")
-        dl_btn   = primary_btn("↓ Download PDF")
+        dl_btn = primary_btn("↓ Download PDF")
         save_btn.clicked.connect(self._save)
         dl_btn.clicked.connect(self._download)
 
-        tl.addWidget(back); tl.addSpacing(8); tl.addWidget(title)
+        tl.addWidget(back)
+        tl.addSpacing(8)
+        tl.addWidget(title)
         tl.addStretch()
-        tl.addWidget(self._status_lbl); tl.addSpacing(4)
-        tl.addWidget(save_btn); tl.addWidget(dl_btn)
+        tl.addWidget(self._status_lbl)
+        tl.addSpacing(4)
+        tl.addWidget(save_btn)
+        tl.addWidget(dl_btn)
         root.addWidget(top)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
 
         left_inner = QWidget()
-        ll = QVBoxLayout(left_inner); ll.setContentsMargins(12,12,12,12); ll.setSpacing(8)
+        ll = QVBoxLayout(left_inner)
+        ll.setContentsMargins(12, 12, 12, 12)
+        ll.setSpacing(8)
         hint = QLabel("▲▼ reorder  ·  ✓ enable section  ·  ▶ Edit to expand")
         hint.setStyleSheet("color: #585b70; font-size: 16px;")
         ll.addWidget(hint)
@@ -1130,53 +1364,131 @@ class StepPreview(QWidget):
         app = self._app
 
         if app and app.get("section_order"):
-            order   = json.loads(app["section_order"])
-            enabled = {k: bool(v) for k, v in json.loads(app["sections_enabled"]).items()}
+            order = json.loads(app["section_order"])
+            enabled = {
+                k: bool(v) for k, v in json.loads(app["sections_enabled"]).items()
+            }
         else:
             ps = self._resume_data.get("profile_settings")
             if ps and ps.get("section_order"):
-                order   = json.loads(ps["section_order"])
-                enabled = {k: bool(v) for k, v in json.loads(ps["sections_enabled"]).items()}
+                order = json.loads(ps["section_order"])
+                enabled = {
+                    k: bool(v) for k, v in json.loads(ps["sections_enabled"]).items()
+                }
             else:
                 s = self._resume_data["settings"]
-                order   = json.loads(s["section_order"])
-                enabled = {k: bool(v) for k, v in json.loads(s["sections_enabled"]).items()}
+                order = json.loads(s["section_order"])
+                enabled = {
+                    k: bool(v) for k, v in json.loads(s["sections_enabled"]).items()
+                }
 
-        inc_exp     = json.loads(app["included_experiences"]) if app and app.get("included_experiences") else None
-        inc_edu     = json.loads(app["included_education"])   if app and app.get("included_education")   else None
-        inc_prj     = json.loads(app["included_projects"])    if app and app.get("included_projects")    else None
-        inc_bullets = {int(k): v for k, v in json.loads(app["included_bullets"]).items()} \
-                      if app and app.get("included_bullets") else None
-        edu_overrides = {int(k): v for k, v in json.loads(app["education_overrides"]).items()} \
-                        if app and app.get("education_overrides") else None
-        sum_text    = app.get("summary_text_override")        if app else None
-        extra       = json.loads(app["extra_keywords"]) if app and app.get("extra_keywords") else self.job_data.get("extra_kw_ids", [])
-        kw_list     = json.loads(app["keyword_list"])    if app and app.get("keyword_list")    else None
+        inc_exp = (
+            json.loads(app["included_experiences"])
+            if app and app.get("included_experiences")
+            else None
+        )
+        inc_edu = (
+            json.loads(app["included_education"])
+            if app and app.get("included_education")
+            else None
+        )
+        inc_prj = (
+            json.loads(app["included_projects"])
+            if app and app.get("included_projects")
+            else None
+        )
+        inc_bullets = (
+            {int(k): v for k, v in json.loads(app["included_bullets"]).items()}
+            if app and app.get("included_bullets")
+            else None
+        )
+        edu_overrides = (
+            {int(k): v for k, v in json.loads(app["education_overrides"]).items()}
+            if app and app.get("education_overrides")
+            else None
+        )
+        exp_overrides = (
+            {int(k): v for k, v in json.loads(app["experience_overrides"]).items()}
+            if app and app.get("experience_overrides")
+            else None
+        )
+        sum_text = app.get("summary_text_override") if app else None
+        extra = (
+            json.loads(app["extra_keywords"])
+            if app and app.get("extra_keywords")
+            else self.job_data.get("extra_kw_ids", [])
+        )
+        kw_list = (
+            json.loads(app["keyword_list"]) if app and app.get("keyword_list") else None
+        )
 
-        saved_contact  = json.loads(app["contact_override"])  if app and app.get("contact_override")  else None
-        saved_websites = json.loads(app["websites_override"]) if app and app.get("websites_override") else None
+        saved_contact = (
+            json.loads(app["contact_override"])
+            if app and app.get("contact_override")
+            else None
+        )
+        saved_websites = (
+            json.loads(app["websites_override"])
+            if app and app.get("websites_override")
+            else None
+        )
 
         for key in order:
             if key == "custom":
                 continue
-            content = self._make_content(key, self._resume_data, inc_exp, inc_edu, inc_prj,
-                                         None, extra, saved_contact, saved_websites,
-                                         sum_text, kw_list, inc_bullets, edu_overrides)
+            content = self._make_content(
+                key,
+                self._resume_data,
+                inc_exp,
+                inc_edu,
+                inc_prj,
+                None,
+                extra,
+                saved_contact,
+                saved_websites,
+                sum_text,
+                kw_list,
+                inc_bullets,
+                edu_overrides,
+                exp_overrides,
+            )
             if content is None:
                 continue
             row = SectionRow(key, enabled.get(key, True), content)
             self._section_list.add_section(row)
 
-    def _make_content(self, key, data, inc_exp, inc_edu, inc_prj,
-                      sel_sum, extra_kw_ids, saved_contact=None,
-                      saved_websites=None, saved_sum_text=None,
-                      saved_kw_list=None, inc_bullets=None, edu_overrides=None):
+    def _make_content(
+        self,
+        key,
+        data,
+        inc_exp,
+        inc_edu,
+        inc_prj,
+        sel_sum,
+        extra_kw_ids,
+        saved_contact=None,
+        saved_websites=None,
+        saved_sum_text=None,
+        saved_kw_list=None,
+        inc_bullets=None,
+        edu_overrides=None,
+        exp_overrides=None,
+    ):
         if key == "contact":
-            contact      = saved_contact  if saved_contact  is not None else (data.get("contact") or {})
-            websites     = saved_websites if saved_websites is not None else (data.get("websites") or [])
+            contact = (
+                saved_contact
+                if saved_contact is not None
+                else (data.get("contact") or {})
+            )
+            websites = (
+                saved_websites
+                if saved_websites is not None
+                else (data.get("websites") or [])
+            )
             all_websites = data.get("websites") or []
             w = _ContactContent(contact, websites, all_websites)
-            w.changed.connect(self._schedule_regen); return w
+            w.changed.connect(self._schedule_regen)
+            return w
         if key == "summary":
             w = _SummaryContent(
                 self._all_profiles,
@@ -1186,17 +1498,24 @@ class StepPreview(QWidget):
             w.changed.connect(self._schedule_regen)
             return w
         if key == "experience":
-            w = _ExperienceContent(data.get("experiences") or [], inc_exp,
-                                   self._bullet_overrides, inc_bullets)
+            w = _ExperienceContent(
+                data.get("experiences") or [],
+                inc_exp,
+                self._bullet_overrides,
+                inc_bullets,
+                exp_overrides,
+            )
             w.changed.connect(self._schedule_regen)
             w.changed.connect(self._save_debounce.start)
             return w
         if key == "education":
             w = _EducationContent(data.get("education") or [], inc_edu, edu_overrides)
-            w.changed.connect(self._schedule_regen); return w
+            w.changed.connect(self._schedule_regen)
+            return w
         if key == "projects":
             w = _ProjectsContent(data.get("projects") or [], inc_prj)
-            w.changed.connect(self._schedule_regen); return w
+            w.changed.connect(self._schedule_regen)
+            return w
         if key == "keywords":
             if saved_kw_list is not None:
                 initial_ids = saved_kw_list
@@ -1208,7 +1527,8 @@ class StepPreview(QWidget):
                         seen.add(i)
                         initial_ids.append(i)
             w = _KeywordsContent(self._all_kw, initial_ids)
-            w.changed.connect(self._schedule_regen); return w
+            w.changed.connect(self._schedule_regen)
+            return w
         return None
 
     def _schedule_regen(self):
@@ -1219,7 +1539,7 @@ class StepPreview(QWidget):
         exp_c = self._section_list.get_content("experience")
         edu_c = self._section_list.get_content("education")
         prj_c = self._section_list.get_content("projects")
-        kw_c  = self._section_list.get_content("keywords")
+        kw_c = self._section_list.get_content("keywords")
         sum_c = self._section_list.get_content("summary")
         con_c = self._section_list.get_content("contact")
 
@@ -1227,49 +1547,81 @@ class StepPreview(QWidget):
             con_c.get_data() if isinstance(con_c, _ContactContent) else (None, None)
         )
 
-        bullet_overrides:     dict[int, str]       = {}
+        bullet_overrides: dict[int, str] = {}
         included_bullets_map: dict[int, list[int]] = {}
+        experience_overrides: dict[int, dict] = {}
         if isinstance(exp_c, _ExperienceContent):
+            bullet_overrides, experience_overrides = exp_c.get_overrides()
             for item in exp_c._sublist._items:
                 if isinstance(item, _ExperienceItem):
-                    bullet_overrides.update(item.get_overrides())
-                    included_bullets_map[item.item_id] = item._bullet_list.get_included_ids()
+                    included_bullets_map[item.item_id] = (
+                        item._bullet_list.get_included_ids()
+                    )
 
         return dict(
-            section_order          = self._section_list.get_order(),
-            sections_enabled       = self._section_list.get_enabled(),
-            bullet_overrides       = bullet_overrides,
-            included_bullets_map   = included_bullets_map,
-            included_experiences   = exp_c.included_ids()       if isinstance(exp_c, _ExperienceContent) else None,
-            included_education     = edu_c.included_ids()       if isinstance(edu_c, _EducationContent)  else None,
-            education_overrides    = edu_c.get_overrides()      if isinstance(edu_c, _EducationContent)  else {},
-            included_projects      = prj_c.included_ids()       if isinstance(prj_c, _ProjectsContent)   else None,
-            project_text_overrides = prj_c.get_text_overrides() if isinstance(prj_c, _ProjectsContent)   else {},
-            project_name_overrides = prj_c.get_name_overrides() if isinstance(prj_c, _ProjectsContent)   else {},
-            keyword_ids            = kw_c.active_ids() if isinstance(kw_c, _KeywordsContent) else list(self._profile_kw_ids),
-            contact_override       = contact_override,
-            websites_override      = websites_override,
-            summary_text_override  = sum_c.get_text_override() if isinstance(sum_c, _SummaryContent) else None,
+            section_order=self._section_list.get_order(),
+            sections_enabled=self._section_list.get_enabled(),
+            bullet_overrides=bullet_overrides,
+            included_bullets_map=included_bullets_map,
+            experience_overrides=experience_overrides,
+            included_experiences=exp_c.included_ids()
+            if isinstance(exp_c, _ExperienceContent)
+            else None,
+            included_education=edu_c.included_ids()
+            if isinstance(edu_c, _EducationContent)
+            else None,
+            education_overrides=edu_c.get_overrides()
+            if isinstance(edu_c, _EducationContent)
+            else {},
+            included_projects=prj_c.included_ids()
+            if isinstance(prj_c, _ProjectsContent)
+            else None,
+            project_text_overrides=prj_c.get_text_overrides()
+            if isinstance(prj_c, _ProjectsContent)
+            else {},
+            project_name_overrides=prj_c.get_name_overrides()
+            if isinstance(prj_c, _ProjectsContent)
+            else {},
+            keyword_ids=kw_c.active_ids()
+            if isinstance(kw_c, _KeywordsContent)
+            else list(self._profile_kw_ids),
+            contact_override=contact_override,
+            websites_override=websites_override,
+            summary_text_override=sum_c.get_text_override()
+            if isinstance(sum_c, _SummaryContent)
+            else None,
         )
 
     def _regenerate(self):
         from resume.generator import generate_resume_pdf_for_app
+
         self._regen_token += 1
         token = self._regen_token
         s = self._get_state()
         task = _Task(
             generate_resume_pdf_for_app,
-            self.db_path, self.job_data["profile_id"],
-            s["keyword_ids"], s["section_order"], s["sections_enabled"],
-            s["bullet_overrides"], s["included_bullets_map"],
-            s["included_experiences"], s["included_education"],
-            s["included_projects"], s["education_overrides"],
-            s["project_text_overrides"], s["project_name_overrides"],
-            s["contact_override"], s["websites_override"],
+            self.db_path,
+            self.job_data["profile_id"],
+            s["keyword_ids"],
+            s["section_order"],
+            s["sections_enabled"],
+            s["bullet_overrides"],
+            s["included_bullets_map"],
+            s["included_experiences"],
+            s["included_education"],
+            s["included_projects"],
+            s["experience_overrides"],
+            s["education_overrides"],
+            s["project_text_overrides"],
+            s["project_name_overrides"],
+            s["contact_override"],
+            s["websites_override"],
             s["summary_text_override"],
         )
         self._active_tasks.add(task)
-        task.sigs.done.connect(lambda pdf, t=token, tk=task: self._on_regen_done(pdf, t, tk))
+        task.sigs.done.connect(
+            lambda pdf, t=token, tk=task: self._on_regen_done(pdf, t, tk)
+        )
         task.sigs.error.connect(lambda msg, tk=task: self._on_regen_error(msg, tk))
         QThreadPool.globalInstance().start(task)
 
@@ -1286,32 +1638,55 @@ class StepPreview(QWidget):
         self._status_lbl.setText(f"Error: {msg}")
 
     def _save(self):
-        s  = self._get_state()
+        s = self._get_state()
         jd = self.job_data
 
         self.application_id = self.db.upsert_application(
-            profile_id            = jd["profile_id"],
-            status_id             = jd.get("status_id", 1),
-            position_name         = jd["position_name"],
-            company_name          = jd["company_name"],
-            date_applied          = jd.get("date_applied", ""),
-            extra_keywords        = json.dumps(s["keyword_ids"]),
-            section_order         = json.dumps(s["section_order"]),
-            sections_enabled      = json.dumps({k: int(v) for k, v in s["sections_enabled"].items()}),
-            summary_text_override = s["summary_text_override"],
-            contact_override      = json.dumps(s["contact_override"]) if s["contact_override"] else None,
-            websites_override     = json.dumps(s["websites_override"]) if s["websites_override"] is not None else None,
-            included_experiences  = json.dumps(s["included_experiences"]) if s["included_experiences"] is not None else None,
-            included_education    = json.dumps(s["included_education"])      if s["included_education"]      is not None else None,
-            included_projects     = json.dumps(s["included_projects"])       if s["included_projects"]       is not None else None,
-            included_bullets      = json.dumps(s["included_bullets_map"])    if s["included_bullets_map"]    is not None else None,
-            education_overrides   = json.dumps({str(k): v for k, v in s["education_overrides"].items()}) if s["education_overrides"] else None,
-            id                    = self.application_id,
+            profile_id=jd["profile_id"],
+            status_id=jd.get("status_id", 1),
+            position_name=jd["position_name"],
+            company_name=jd["company_name"],
+            date_applied=jd.get("date_applied", ""),
+            extra_keywords=json.dumps(s["keyword_ids"]),
+            section_order=json.dumps(s["section_order"]),
+            sections_enabled=json.dumps(
+                {k: int(v) for k, v in s["sections_enabled"].items()}
+            ),
+            summary_text_override=s["summary_text_override"],
+            contact_override=json.dumps(s["contact_override"])
+            if s["contact_override"]
+            else None,
+            websites_override=json.dumps(s["websites_override"])
+            if s["websites_override"] is not None
+            else None,
+            included_experiences=json.dumps(s["included_experiences"])
+            if s["included_experiences"] is not None
+            else None,
+            included_education=json.dumps(s["included_education"])
+            if s["included_education"] is not None
+            else None,
+            included_projects=json.dumps(s["included_projects"])
+            if s["included_projects"] is not None
+            else None,
+            included_bullets=json.dumps(s["included_bullets_map"])
+            if s["included_bullets_map"] is not None
+            else None,
+            education_overrides=json.dumps(
+                {str(k): v for k, v in s["education_overrides"].items()}
+            )
+            if s["education_overrides"]
+            else None,
+            experience_overrides=json.dumps(
+                {str(k): v for k, v in s["experience_overrides"].items()}
+            )
+            if s["experience_overrides"]
+            else None,
+            id=self.application_id,
         )
         # save the full explicit keyword list so reopening uses it directly
         self.db.execute(
             "UPDATE job_application SET keyword_list=? WHERE id=?",
-            (json.dumps(s["keyword_ids"]), self.application_id)
+            (json.dumps(s["keyword_ids"]), self.application_id),
         )
         self.db.clear_bullet_overrides(self.application_id)
         for bp_id, text in s["bullet_overrides"].items():
@@ -1319,18 +1694,18 @@ class StepPreview(QWidget):
 
         self.saved.emit(self.application_id)
         self._status_lbl.setText("Saved ✓")
+
     def _download(self):
         if not self._pdf_bytes:
             QMessageBox.warning(self, "Not ready", "Wait for the preview to finish.")
             return
-        settings  = self.db.get_settings()
-        folder    = settings.get("pdf_output_folder") or str(Path.home())
-        tmpl      = settings.get("pdf_filename_template") or "{company}_{position}_{date}"
+        settings = self.db.get_settings()
+        folder = settings.get("pdf_output_folder") or str(Path.home())
+        tmpl = settings.get("pdf_filename_template") or "{company}_{position}_{date}"
         auto_name = (
-            tmpl
-            .replace("{company}",  self.job_data["company_name"])
+            tmpl.replace("{company}", self.job_data["company_name"])
             .replace("{position}", self.job_data["position_name"])
-            .replace("{date}",     date.today().strftime("%Y-%m-%d"))
+            .replace("{date}", date.today().strftime("%Y-%m-%d"))
             .replace(" ", "_")
         )
         out_path = Path(folder) / f"{auto_name}.pdf"

@@ -46,17 +46,18 @@
         {% for job in experiences %}
         <div class="entry">
             <div class="entry-header">
-                <span class="entry-title">{{ job.position_name }}</span>
+                <span class="entry-title">
+                    {{ job.position_name }}
+                    {% if job.organization_name %}<span class="entry-org-divider">|</span><span class="entry-org">{% if job.organization_website %}<a href="{{ job.organization_website }}">{{ job.organization_name }}</a>{% else %}{{ job.organization_name }}{% endif %}</span>{% endif %}
+                    {% if job.location %}<span class="entry-loc">{{ job.location }}</span>{% endif %}
+                </span>
                 <span class="entry-date">
                     {{ job.start_date | format_date(date_format) }}
                     –
                     {% if job.is_ongoing %}Present{% else %}{{ job.end_date | format_date(date_format) }}{% endif %}
                 </span>
             </div>
-            <div class="entry-sub">
-                <span class="entry-org">{{ job.organization_name }}</span>
-                {% if job.location %}<span class="entry-loc">{{ job.location }}</span>{% endif %}
-            </div>
+            {% if job.organization_description %}<p class="entry-company-desc">{{ job.organization_description }}</p>{% endif %}
             {% if job.bullet_points %}
             <ul>
                 {% for bp in job.bullet_points %}

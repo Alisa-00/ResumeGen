@@ -80,6 +80,7 @@ def _assemble(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    experience_overrides: dict[int, dict] | None = None,
     education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
     project_name_overrides: dict[int, str] | None = None,
@@ -126,6 +127,7 @@ def _assemble(
 
     experiences = []
     for job in exp_pool:
+        exp_override = (experience_overrides or {}).get(job["id"])
         if included_bullets_map is not None and job["id"] in included_bullets_map:
             bullets = _apply_bullets_explicit(
                 job["bullet_points"],
@@ -136,7 +138,7 @@ def _assemble(
             bullets = _filter_bullets_by_keywords(
                 job["bullet_points"], profile_kw_ids, min_bp, max_bp, bullet_overrides
             )
-        experiences.append({**job, "bullet_points": bullets})
+        experiences.append({**job, **(exp_override or {}), "bullet_points": bullets})
 
     # projects
     prj_pool = data["projects"]
@@ -244,6 +246,7 @@ def generate_resume_pdf_for_app(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    experience_overrides: dict[int, dict] | None = None,
     education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
     project_name_overrides: dict[int, str] | None = None,
@@ -267,6 +270,7 @@ def generate_resume_pdf_for_app(
                 included_experience_ids=included_experience_ids,
                 included_education_ids=included_education_ids,
                 included_project_ids=included_project_ids,
+                experience_overrides=experience_overrides,
                 education_overrides=education_overrides,
                 project_text_overrides=project_text_overrides,
                 project_name_overrides=project_name_overrides,

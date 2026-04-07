@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS work_experience (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     organization_name TEXT    NOT NULL,
     position_name     TEXT    NOT NULL,
+    organization_description TEXT,
+    organization_website TEXT,
     location          TEXT,
     is_ongoing        INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
     start_date        TEXT,
@@ -165,6 +167,7 @@ CREATE TABLE IF NOT EXISTS job_application (
     summary_text_override TEXT,
     contact_override     TEXT,
     websites_override    TEXT,
+    experience_overrides TEXT,
     included_experiences TEXT,
     included_education   TEXT,
     included_projects    TEXT
@@ -200,9 +203,12 @@ class Database:
     def _migrate(self) -> None:
         """Add any columns that exist in the schema but not in the live DB."""
         migrations = [
+            ("work_experience", "organization_description", "TEXT"),
+            ("work_experience", "organization_website", "TEXT"),
             ("job_application", "summary_text_override", "TEXT"),
             ("job_application", "contact_override", "TEXT"),
             ("job_application", "websites_override", "TEXT"),
+            ("job_application", "experience_overrides", "TEXT"),
             ("job_application", "selected_summary_id", "INTEGER"),
             ("job_application", "included_experiences", "TEXT"),
             ("job_application", "included_education", "TEXT"),
@@ -512,6 +518,8 @@ class Database:
         self,
         org: str,
         position: str,
+        organization_description: str,
+        organization_website: str,
         location: str,
         is_ongoing: bool,
         start_date: str,
@@ -521,15 +529,36 @@ class Database:
         if id:
             self.execute(
                 """UPDATE work_experience SET organization_name=?, position_name=?,
+                   organization_description=?, organization_website=?,
                    location=?, is_ongoing=?, start_date=?, end_date=? WHERE id=?""",
-                (org, position, location, int(is_ongoing), start_date, end_date, id),
+                (
+                    org,
+                    position,
+                    organization_description,
+                    organization_website,
+                    location,
+                    int(is_ongoing),
+                    start_date,
+                    end_date,
+                    id,
+                ),
             )
             return id
         return self.execute(
             """INSERT INTO work_experience
-               (organization_name, position_name, location, is_ongoing, start_date, end_date)
-               VALUES (?,?,?,?,?,?)""",
-            (org, position, location, int(is_ongoing), start_date, end_date),
+               (organization_name, position_name, organization_description,
+                organization_website, location, is_ongoing, start_date, end_date)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                org,
+                position,
+                organization_description,
+                organization_website,
+                location,
+                int(is_ongoing),
+                start_date,
+                end_date,
+            ),
         )
 
     def delete_work_experience(self, id: int) -> None:
@@ -766,6 +795,7 @@ class Database:
         summary_text_override: str | None = None,
         contact_override: str | None = None,
         websites_override: str | None = None,
+        experience_overrides: str | None = None,
         included_experiences: str | None = None,
         included_education: str | None = None,
         included_projects: str | None = None,
@@ -780,7 +810,7 @@ class Database:
                    date_applied=?, extra_keywords=?, section_order=?,
                    sections_enabled=?, resume_pdf_path=?,
                    selected_summary_id=?, summary_text_override=?,
-                   contact_override=?, websites_override=?,
+                   contact_override=?, websites_override=?, experience_overrides=?,
                    included_experiences=?, included_education=?,
                    included_projects=?, included_bullets=?,
                    education_overrides=?
@@ -799,6 +829,7 @@ class Database:
                     summary_text_override,
                     contact_override,
                     websites_override,
+                    experience_overrides,
                     included_experiences,
                     included_education,
                     included_projects,
@@ -813,11 +844,11 @@ class Database:
                (profile_id, status_id, position_name, company_name,
                 date_applied, extra_keywords, section_order, sections_enabled,
                 selected_summary_id, summary_text_override,
-                contact_override, websites_override,
+                contact_override, websites_override, experience_overrides,
                 included_experiences, included_education,
                 included_projects, included_bullets,
                 education_overrides)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 profile_id,
                 status_id,
@@ -831,6 +862,7 @@ class Database:
                 summary_text_override,
                 contact_override,
                 websites_override,
+                experience_overrides,
                 included_experiences,
                 included_education,
                 included_projects,
