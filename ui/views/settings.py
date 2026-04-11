@@ -31,6 +31,7 @@ SECTION_LABELS: dict[str, str] = {
     "summary": "Summary",
     "experience": "Experience",
     "education": "Education",
+    "languages": "Languages",
     "projects": "Projects",
     "keywords": "Skills / Keywords",
 }
@@ -186,11 +187,11 @@ class SettingsView(QWidget):
 
         order_raw = (
             settings.get("section_order")
-            or '["contact","summary","experience","education","projects","keywords"]'
+            or '["contact","summary","experience","education","languages","projects","keywords"]'
         )
         enabled_raw = (
             settings.get("sections_enabled")
-            or '{"contact":1,"summary":1,"experience":1,"education":1,"projects":1,"keywords":1}'
+            or '{"contact":1,"summary":1,"experience":1,"education":1,"languages":1,"projects":1,"keywords":1}'
         )
 
         order = [k for k in json.loads(order_raw) if k != "custom"]

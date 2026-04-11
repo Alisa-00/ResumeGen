@@ -137,6 +137,43 @@ section {
     color: #444;
 }
 
+/* ── Compact Education ──────────────────────────────────────── */
+.edu-entry {
+    margin-bottom: 4pt;
+}
+
+.edu-title {
+    font-weight: bold;
+}
+
+.edu-title .edu-school {
+    font-weight: normal;
+    margin-left: 4pt;
+}
+
+.edu-title .edu-school a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.edu-divider {
+    font-weight: normal;
+    color: #888;
+    margin: 0 4pt;
+}
+
+.edu-title .edu-loc {
+    font-size: 0.85em;
+    color: #888;
+    margin-left: 6pt;
+}
+
+/* ── Languages ─────────────────────────────────────────────────── */
+.languages-list {
+    font-size: 0.93em;
+    line-height: 1.6;
+}
+
 /* ── Bullet points ──────────────────────────────────────────── */
 ul {
     margin-top: 4pt;

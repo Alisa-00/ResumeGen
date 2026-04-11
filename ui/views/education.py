@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QCheckBox, QMessageBox,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QPushButton,
+    QCheckBox,
+    QMessageBox,
 )
 
 from db.database import Database
 from ui.widgets import (
-    section_title, hline, primary_btn, flat_link_btn,
-    field, date_field, scrollable, Card,
+    section_title,
+    hline,
+    primary_btn,
+    flat_link_btn,
+    field,
+    date_field,
+    scrollable,
+    Card,
 )
 
 
@@ -31,13 +42,13 @@ class EducationView(QWidget):
         layout.addWidget(hline())
 
         self._cards_container = QWidget()
-        self._cards_layout    = QVBoxLayout(self._cards_container)
+        self._cards_layout = QVBoxLayout(self._cards_container)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
         self._cards_layout.setSpacing(10)
         layout.addWidget(self._cards_container)
 
         btn_row = QHBoxLayout()
-        add_btn  = flat_link_btn("+ Add Education")
+        add_btn = flat_link_btn("+ Add Education")
         add_btn.clicked.connect(lambda: self._add_card())
         save_btn = primary_btn("Save All")
         save_btn.clicked.connect(self._save_all)
@@ -62,33 +73,43 @@ class EducationView(QWidget):
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
-        f_degree   = field("Degree",      (data or {}).get("degree", ""))
-        f_school   = field("School",      (data or {}).get("school", ""))
-        f_location = field("Location",    (data or {}).get("location", ""))
-        f_field    = field("Field/Major", (data or {}).get("field", ""))
-        f_gpa      = field("GPA / Score", (data or {}).get("gpa", ""))
-        f_start    = date_field((data or {}).get("start_date", ""))
-        f_end      = date_field((data or {}).get("end_date", ""))
-        f_ongoing  = QCheckBox("Currently ongoing")
+        f_degree = field("Degree", (data or {}).get("degree", ""))
+        f_school = field("School", (data or {}).get("school", ""))
+        f_schoolurl = field("School URL", (data or {}).get("school_url", ""))
+        f_location = field("Location", (data or {}).get("location", ""))
+        f_field = field("Field/Major", (data or {}).get("field", ""))
+        f_gpa = field("GPA / Score", (data or {}).get("gpa", ""))
+        f_start = date_field((data or {}).get("start_date", ""))
+        f_end = date_field((data or {}).get("end_date", ""))
+        f_ongoing = QCheckBox("Currently ongoing")
         f_ongoing.setChecked(bool((data or {}).get("is_ongoing", False)))
         f_ongoing.toggled.connect(lambda checked: f_end.setDisabled(checked))
         f_end.setDisabled(f_ongoing.isChecked())
 
         for lbl, w in [
-            ("Degree",   f_degree),
-            ("School",   f_school),
+            ("Degree", f_degree),
+            ("School", f_school),
+            ("School URL", f_schoolurl),
             ("Location", f_location),
-            ("Field",    f_field),
-            ("GPA",      f_gpa),
-            ("Start",    f_start),
-            ("End",      f_end),
-            ("",         f_ongoing),
+            ("Field", f_field),
+            ("GPA", f_gpa),
+            ("Start", f_start),
+            ("End", f_end),
+            ("", f_ongoing),
         ]:
             form.addRow(lbl, w)
 
-        card._fields = dict(degree=f_degree, school=f_school, location=f_location,
-                            field=f_field, gpa=f_gpa, start=f_start, end=f_end,
-                            ongoing=f_ongoing)
+        card._fields = dict(
+            degree=f_degree,
+            school=f_school,
+            school_url=f_schoolurl,
+            location=f_location,
+            field=f_field,
+            gpa=f_gpa,
+            start=f_start,
+            end=f_end,
+            ongoing=f_ongoing,
+        )
         card._data = data
         card.add_form(form)
         card.add_delete_button()
@@ -108,15 +129,18 @@ class EducationView(QWidget):
         for card, _ in self._cards:
             f = card._fields
             new_id = self.db.upsert_education(
-                degree     = f["degree"].text().strip(),
-                school     = f["school"].text().strip(),
-                location   = f["location"].text().strip(),
-                field      = f["field"].text().strip(),
-                gpa        = f["gpa"].text().strip(),
-                is_ongoing = f["ongoing"].isChecked(),
-                start_date = _clean_date(f["start"].text()),
-                end_date   = None if f["ongoing"].isChecked() else _clean_date(f["end"].text()),
-                id         = (card._data or {}).get("id"),
+                degree=f["degree"].text().strip(),
+                school=f["school"].text().strip(),
+                school_url=f["school_url"].text().strip(),
+                location=f["location"].text().strip(),
+                field=f["field"].text().strip(),
+                gpa=f["gpa"].text().strip(),
+                is_ongoing=f["ongoing"].isChecked(),
+                start_date=_clean_date(f["start"].text()),
+                end_date=None
+                if f["ongoing"].isChecked()
+                else _clean_date(f["end"].text()),
+                id=(card._data or {}).get("id"),
             )
             card._data = {**(card._data or {}), "id": new_id}
         QMessageBox.information(self, "Saved", "Education saved.")

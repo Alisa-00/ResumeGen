@@ -75,22 +75,29 @@
     <section>
         <h2 class="section-heading">Education</h2>
         {% for edu in education %}
-        <div class="entry">
+        <div class="entry edu-entry">
             <div class="entry-header">
-                <span class="entry-title">{{ edu.degree }}{% if edu.field %}, {{ edu.field }}{% endif %}</span>
+                <span class="entry-title edu-title">
+                    {{ edu.degree }}{% if edu.field %} in {{ edu.field }}{% endif %}
+                    {% if edu.school %}<span class="edu-divider">|</span><span class="edu-school">{% if edu.school_url %}<a href="{{ edu.school_url }}">{{ edu.school }}</a>{% else %}{{ edu.school }}{% endif %}</span>{% endif %}
+                    {% if edu.location %}<span class="edu-loc">{{ edu.location }}</span>{% endif %}
+                </span>
                 <span class="entry-date">
-                    {{ edu.start_date | format_date(date_format) }}
-                    –
                     {% if edu.is_ongoing %}Present{% else %}{{ edu.end_date | format_date(date_format) }}{% endif %}
                 </span>
             </div>
-            <div class="entry-sub">
-                <span class="entry-org">{{ edu.school }}</span>
-                {% if edu.location %}<span class="entry-loc">{{ edu.location }}</span>{% endif %}
-                {% if edu.gpa %}<span class="entry-gpa">GPA: {{ edu.gpa }}</span>{% endif %}
-            </div>
         </div>
         {% endfor %}
+    </section>
+    {% endif %}
+
+    {# ── LANGUAGES ───────────────────────────────────────────── #}
+    {% if section == "languages" and sections_enabled.languages and languages %}
+    <section>
+        <h2 class="section-heading">Languages</h2>
+        <p class="languages-list">
+            {% for lang in languages %}{{ lang.name }}: {{ lang.proficiency_level }}{% if not loop.last %} | {% endif %}{% endfor %}
+        </p>
     </section>
     {% endif %}
 

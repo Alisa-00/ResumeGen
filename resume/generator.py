@@ -182,6 +182,9 @@ def _assemble(
 
         education = [_apply_edu(e) for e in education]
 
+    # languages
+    languages = data["languages"]
+
     # section order + enabled
     ps = data["profile_settings"]
     if section_order_override is not None:
@@ -207,6 +210,7 @@ def _assemble(
         summary=summary,
         experiences=experiences,
         education=education,
+        languages=languages,
         projects=projects,
         keywords=all_kws,
         section_order=section_order,

@@ -41,6 +41,7 @@ SECTION_LABELS = {
     "summary": "Summary",
     "experience": "Experience",
     "education": "Education",
+    "languages": "Languages",
     "projects": "Projects",
     "keywords": "Skills / Keywords",
 }
@@ -674,6 +675,7 @@ class _EducationItem(_SubItem):
         for field_key, label_text, placeholder in [
             ("degree", "Degree", "e.g. B.Sc."),
             ("school", "School", "e.g. MIT"),
+            ("school_url", "School URL", "https://university.edu"),
             ("location", "Location", "e.g. Boston, MA"),
             ("field", "Field", "e.g. Computer Science"),
             ("start_date", "Start", "YYYY-MM"),
@@ -691,7 +693,15 @@ class _EducationItem(_SubItem):
             self._add_body_row(label_text, w)
 
     def get_overrides(self) -> dict | None:
-        fields = ["degree", "school", "location", "field", "start_date", "end_date"]
+        fields = [
+            "degree",
+            "school",
+            "school_url",
+            "location",
+            "field",
+            "start_date",
+            "end_date",
+        ]
         result = {}
         for f in fields:
             current = getattr(self, f"_f_{f}").text().strip()
@@ -799,6 +809,7 @@ class _ExperienceContent(QWidget):
         super().__init__(parent)
         self._all = experiences
         self._overrides = overrides
+        self._included_bullets_map = included_bullets_map or {}
         self._exp_overrides = exp_overrides or {}
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -995,6 +1006,28 @@ class _ProjectsContent(QWidget):
                 if name != original.strip():
                     overrides[item.item_id] = name
         return overrides
+
+
+class _LanguagesContent(QWidget):
+    """Simple display-only widget for languages (editing happens in main editor)."""
+
+    def __init__(self, languages: list[dict], parent=None):
+        super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+
+        if languages:
+            for lang in languages:
+                lbl = QLabel(f"• {lang['name']}: {lang['proficiency_level']}")
+                lbl.setStyleSheet("color: #cdd6f4; font-size: 16px;")
+                root.addWidget(lbl)
+        else:
+            empty = QLabel("No languages added. Add them in the Languages section.")
+            empty.setStyleSheet("color: #585b70; font-size: 16px;")
+            root.addWidget(empty)
+
+        root.addStretch()
 
 
 class _KeywordsContent(QWidget):
@@ -1433,6 +1466,13 @@ class StepPreview(QWidget):
             else None
         )
 
+        # Ensure all sections from SECTION_LABELS are in the order (for backwards compatibility)
+        # Add any missing sections (like "languages" for older databases) to the end
+        for key in SECTION_LABELS:
+            if key not in order and key != "custom":
+                order.append(key)
+                enabled[key] = True  # Enable by default
+
         for key in order:
             if key == "custom":
                 continue
@@ -1511,6 +1551,9 @@ class StepPreview(QWidget):
         if key == "education":
             w = _EducationContent(data.get("education") or [], inc_edu, edu_overrides)
             w.changed.connect(self._schedule_regen)
+            return w
+        if key == "languages":
+            w = _LanguagesContent(data.get("languages") or [])
             return w
         if key == "projects":
             w = _ProjectsContent(data.get("projects") or [], inc_prj)

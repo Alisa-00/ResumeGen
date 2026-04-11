@@ -58,12 +58,19 @@ CREATE TABLE IF NOT EXISTS education (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     degree     TEXT    NOT NULL,
     school     TEXT    NOT NULL,
+    school_url TEXT,
     location   TEXT,
     field      TEXT,
     gpa        TEXT,
     is_ongoing INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
     start_date TEXT,
     end_date   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS language (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT    NOT NULL UNIQUE,
+    proficiency_level TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS project (
@@ -110,9 +117,9 @@ CREATE TABLE IF NOT EXISTS resume_template (
 CREATE TABLE IF NOT EXISTS app_settings (
     id                  INTEGER PRIMARY KEY DEFAULT 1,
     section_order       TEXT    NOT NULL DEFAULT
-        '["contact","summary","experience","education","projects","keywords","custom"]',
+        '["contact","summary","experience","education","languages","projects","keywords","custom"]',
     sections_enabled    TEXT    NOT NULL DEFAULT
-        '{"contact":1,"summary":1,"experience":1,"education":1,"projects":1,"keywords":1,"custom":0}',
+        '{"contact":1,"summary":1,"experience":1,"education":1,"languages":1,"projects":1,"keywords":1,"custom":0}',
     default_template_id INTEGER REFERENCES resume_template(id),
     pdf_output_folder   TEXT,
     pdf_filename_template TEXT  NOT NULL DEFAULT '{company}_{position}_{date}',
@@ -202,6 +209,24 @@ class Database:
 
     def _migrate(self) -> None:
         """Add any columns that exist in the schema but not in the live DB."""
+        # Create new tables that might not exist in older databases
+        table_creations = [
+            """
+            CREATE TABLE IF NOT EXISTS language (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                name              TEXT    NOT NULL UNIQUE,
+                proficiency_level TEXT    NOT NULL
+            )
+            """,
+        ]
+        for sql in table_creations:
+            try:
+                self._conn.execute(sql)
+                self._conn.commit()
+            except sqlite3.Error as e:
+                print(f"[MIGRATE] Warning creating table: {e}")
+
+        # Column migrations
         migrations = [
             ("work_experience", "organization_description", "TEXT"),
             ("work_experience", "organization_website", "TEXT"),
@@ -223,6 +248,7 @@ class Database:
             ("profile", "summary", "TEXT"),
             ("job_application", "education_overrides", "TEXT"),
             ("app_settings", "date_format", "TEXT NOT NULL DEFAULT 'YYYY'"),
+            ("education", "school_url", "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -329,6 +355,8 @@ class Database:
 
         education = self.get_education()
 
+        languages = self.get_languages()
+
         projects = []
         for p in self.get_projects():
             projects.append({**p, "keyword_ids": self.get_project_keywords(p["id"])})
@@ -355,6 +383,7 @@ class Database:
             summary_text=summary_text,
             experiences=experiences,
             education=education,
+            languages=languages,
             projects=projects,
             profile_keywords=profile_keywords,
             settings=settings,
@@ -624,6 +653,7 @@ class Database:
         self,
         degree: str,
         school: str,
+        school_url: str,
         location: str,
         field: str,
         gpa: str,
@@ -634,11 +664,12 @@ class Database:
     ) -> int:
         if id:
             self.execute(
-                """UPDATE education SET degree=?, school=?, location=?, field=?,
+                """UPDATE education SET degree=?, school=?, school_url=?, location=?, field=?,
                    gpa=?, is_ongoing=?, start_date=?, end_date=? WHERE id=?""",
                 (
                     degree,
                     school,
+                    school_url,
                     location,
                     field,
                     gpa,
@@ -651,11 +682,12 @@ class Database:
             return id
         return self.execute(
             """INSERT INTO education
-               (degree, school, location, field, gpa, is_ongoing, start_date, end_date)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               (degree, school, school_url, location, field, gpa, is_ongoing, start_date, end_date)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (
                 degree,
                 school,
+                school_url,
                 location,
                 field,
                 gpa,
@@ -667,6 +699,34 @@ class Database:
 
     def delete_education(self, id: int) -> None:
         self.execute("DELETE FROM education WHERE id=?", (id,))
+
+    # ------------------------------------------------------------------
+    # languages
+    # ------------------------------------------------------------------
+
+    def get_languages(self) -> list[dict]:
+        return self.fetch_all("SELECT * FROM language ORDER BY name")
+
+    def upsert_language(
+        self, name: str, proficiency_level: str, id: int | None = None
+    ) -> int:
+        if id:
+            self.execute(
+                "UPDATE language SET name=?, proficiency_level=? WHERE id=?",
+                (name, proficiency_level, id),
+            )
+            return id
+        # Use INSERT OR REPLACE to handle unique constraint on name
+        # This updates proficiency_level if language with this name already exists
+        return self.execute(
+            """INSERT INTO language (name, proficiency_level)
+               VALUES (?,?)
+               ON CONFLICT(name) DO UPDATE SET proficiency_level=excluded.proficiency_level""",
+            (name, proficiency_level),
+        )
+
+    def delete_language(self, id: int) -> None:
+        self.execute("DELETE FROM language WHERE id=?", (id,))
 
     # ------------------------------------------------------------------
     # projects
