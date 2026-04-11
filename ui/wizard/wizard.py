@@ -24,11 +24,16 @@ from ui.wizard.step_preview import StepPreview
 class WizardWidget(QWidget):
     closed = Signal()
 
-    def __init__(self, db: Database, db_path: Path,
-                 application_id: int | None = None, parent=None):
+    def __init__(
+        self,
+        db: Database,
+        db_path: Path,
+        application_id: int | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
-        self.db             = db
-        self.db_path        = db_path
+        self.db = db
+        self.db_path = db_path
         self.application_id = application_id
 
         self._stack = QStackedWidget()
@@ -44,12 +49,14 @@ class WizardWidget(QWidget):
         # if reopening an existing application go straight to step 2
         if existing:
             job_data = {
-                "company_name":  existing["company_name"],
+                "company_name": existing["company_name"],
                 "position_name": existing["position_name"],
-                "profile_id":    existing["profile_id"],
-                "status_id":     existing["status_id"],
-                "date_applied":  existing.get("date_applied", ""),
-                "extra_kw_ids":  json.loads(existing.get("extra_keywords", "[]")),
+                "profile_id": existing["profile_id"],
+                "status_id": existing["status_id"],
+                "date_applied": existing.get("date_applied", ""),
+                "extra_kw_ids": json.loads(existing.get("extra_keywords", "[]")),
+                "job_posting_url": existing.get("job_posting_url", ""),
+                "job_posting_description": existing.get("job_posting_description", ""),
             }
             self._build_step2(job_data)
             self._stack.setCurrentIndex(1)
@@ -58,17 +65,20 @@ class WizardWidget(QWidget):
 
     def _on_next(self, job_data: dict):
         """Called from step 1. Auto-saves the application, then shows step 2."""
-        statuses   = {s["status"]: s["id"] for s in self.db.get_statuses()}
-        status_id  = statuses.get("to-apply", 1)
+        statuses = {s["status"]: s["id"] for s in self.db.get_statuses()}
+        status_id = statuses.get("to-apply", 1)
 
         self.application_id = self.db.upsert_application(
-            profile_id    = job_data["profile_id"],
-            status_id     = status_id,
-            position_name = job_data["position_name"],
-            company_name  = job_data["company_name"],
-            date_applied  = job_data.get("date_applied") or date.today().strftime("%Y-%m-%d"),
-            extra_keywords= json.dumps(job_data.get("extra_kw_ids", [])),
-            id            = self.application_id,
+            profile_id=job_data["profile_id"],
+            status_id=status_id,
+            position_name=job_data["position_name"],
+            company_name=job_data["company_name"],
+            date_applied=job_data.get("date_applied")
+            or date.today().strftime("%Y-%m-%d"),
+            extra_keywords=json.dumps(job_data.get("extra_kw_ids", [])),
+            job_posting_url=job_data.get("job_posting_url", ""),
+            job_posting_description=job_data.get("job_posting_description", ""),
+            id=self.application_id,
         )
         job_data["status_id"] = status_id
 
@@ -82,10 +92,10 @@ class WizardWidget(QWidget):
             old.deleteLater()
 
         step2 = StepPreview(
-            db             = self.db,
-            db_path        = self.db_path,
-            job_data       = job_data,
-            application_id = self.application_id,
+            db=self.db,
+            db_path=self.db_path,
+            job_data=job_data,
+            application_id=self.application_id,
         )
         step2.back_requested.connect(self.closed)
         step2.saved.connect(self._on_saved)

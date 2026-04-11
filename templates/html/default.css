@@ -72,6 +72,28 @@ section {
     font-weight: bold;
 }
 
+.entry-title .entry-org {
+    font-weight: normal;
+    margin-left: 4pt;
+}
+
+.entry-title .entry-org a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.entry-org-divider {
+    font-weight: normal;
+    color: #888;
+    margin: 0 4pt;
+}
+
+.entry-title .entry-loc {
+    font-size: 0.85em;
+    color: #888;
+    margin-left: 6pt;
+}
+
 .entry-date {
     font-size: 0.85em;
     color: #444;
@@ -81,23 +103,96 @@ section {
 
 .entry-sub {
     display: flex;
-    gap: 0 12pt;
-    font-size: 0.9em;
-    color: #444;
+    gap: 0 8pt;
+    font-size: 0.95em;
+    color: #333;
     margin-top: 1pt;
+    align-items: baseline;
 }
 
 .entry-org {
-    font-style: italic;
+    font-weight: normal;
 }
 
-.entry-loc {}
+.entry-org a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.entry-loc {
+    font-size: 0.85em;
+    color: #666;
+}
 
 .entry-gpa {}
 
 .entry-desc {
     margin-top: 3pt;
     font-size: 0.9em;
+}
+
+.entry-company-desc {
+    margin-top: 1pt;
+    font-size: 0.9em;
+    color: #444;
+}
+
+/* ── Compact Education ──────────────────────────────────────── */
+.edu-entry {
+    margin-bottom: 4pt;
+}
+
+.edu-title {
+    font-weight: bold;
+}
+
+.edu-title .edu-school {
+    font-weight: normal;
+    margin-left: 4pt;
+}
+
+.edu-title .edu-school a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.edu-divider {
+    font-weight: normal;
+    color: #888;
+    margin: 0 4pt;
+}
+
+.edu-title .edu-loc {
+    font-size: 0.85em;
+    color: #888;
+    margin-left: 6pt;
+}
+
+/* ── Languages ─────────────────────────────────────────────────── */
+.languages-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4pt 12pt;
+    margin-top: 4pt;
+}
+
+.language-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.language-name {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #333;
+    line-height: 1.25;
+}
+
+.language-level {
+    font-size: 0.8em;
+    color: #666;
+    line-height: 1.25;
+    margin-top: 0.5pt;
 }
 
 /* ── Bullet points ──────────────────────────────────────────── */

@@ -19,6 +19,7 @@ TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "html"
 
 # ── scoring ──────────────────────────────────────────────────────────
 
+
 def _kw_set(keywords: list[dict]) -> set[int]:
     return {kw["id"] for kw in keywords}
 
@@ -36,11 +37,11 @@ def _filter_bullets_by_keywords(
 ) -> list[dict]:
     """Used for profile-only generation — keyword-based filtering."""
     overrides = overrides or {}
-    bullets   = [{**b, "text": overrides.get(b["id"], b["text"])} for b in bullets]
-    matched   = [b for b in bullets if _any_match(b["keyword_ids"], profile_kw_ids)]
+    bullets = [{**b, "text": overrides.get(b["id"], b["text"])} for b in bullets]
+    matched = [b for b in bullets if _any_match(b["keyword_ids"], profile_kw_ids)]
     unmatched = [b for b in bullets if not _any_match(b["keyword_ids"], profile_kw_ids)]
     if len(matched) < min_bp:
-        matched += unmatched[:min_bp - len(matched)]
+        matched += unmatched[: min_bp - len(matched)]
     matched.sort(key=lambda b: b["sort_order"])
     return matched[:max_bp]
 
@@ -55,8 +56,8 @@ def _apply_bullets_explicit(
     and order from the wizard, applying text overrides.
     """
     overrides = overrides or {}
-    id_map    = {b["id"]: b for b in bullets}
-    result    = []
+    id_map = {b["id"]: b for b in bullets}
+    result = []
     for bid in included_ids:
         if bid in id_map:
             b = id_map[bid]
@@ -65,6 +66,7 @@ def _apply_bullets_explicit(
 
 
 # ── assembly ─────────────────────────────────────────────────────────
+
 
 def _assemble(
     db: Database,
@@ -78,6 +80,8 @@ def _assemble(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    included_languages: list[dict] | None = None,
+    experience_overrides: dict[int, dict] | None = None,
     education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
     project_name_overrides: dict[int, str] | None = None,
@@ -85,11 +89,11 @@ def _assemble(
     websites_override: list[dict] | None = None,
     summary_text_override: str | None = None,
 ) -> dict:
-    data     = db.get_resume_data(profile_id)
+    data = db.get_resume_data(profile_id)
     base_kws = data["profile_keywords"]
 
     if explicit_keyword_ids is not None:
-        kw_map  = {kw["id"]: kw for kw in db.get_keywords()}
+        kw_map = {kw["id"]: kw for kw in db.get_keywords()}
         all_kws = [kw_map[i] for i in explicit_keyword_ids if i in kw_map]
     else:
         extra_kws: list[dict] = []
@@ -102,11 +106,11 @@ def _assemble(
     profile_kw_ids = _kw_set(all_kws)
 
     template = data["template"] or {}
-    min_bp   = template.get("min_bullet_points_per_job", 2)
-    max_bp   = template.get("max_bullet_points_per_job", 5)
+    min_bp = template.get("min_bullet_points_per_job", 2)
+    max_bp = template.get("max_bullet_points_per_job", 5)
 
     # contact
-    contact  = {**(data["contact"] or {}), **(contact_override or {})}
+    contact = {**(data["contact"] or {}), **(contact_override or {})}
     websites = websites_override if websites_override is not None else data["websites"]
 
     # summary — always use what the editor provides
@@ -119,11 +123,12 @@ def _assemble(
         id_order = {eid: i for i, eid in enumerate(included_experience_ids)}
         exp_pool = sorted(
             [e for e in exp_pool if e["id"] in id_order],
-            key=lambda e: id_order[e["id"]]
+            key=lambda e: id_order[e["id"]],
         )
 
     experiences = []
     for job in exp_pool:
+        exp_override = (experience_overrides or {}).get(job["id"])
         if included_bullets_map is not None and job["id"] in included_bullets_map:
             bullets = _apply_bullets_explicit(
                 job["bullet_points"],
@@ -134,7 +139,7 @@ def _assemble(
             bullets = _filter_bullets_by_keywords(
                 job["bullet_points"], profile_kw_ids, min_bp, max_bp, bullet_overrides
             )
-        experiences.append({**job, "bullet_points": bullets})
+        experiences.append({**job, **(exp_override or {}), "bullet_points": bullets})
 
     # projects
     prj_pool = data["projects"]
@@ -142,13 +147,14 @@ def _assemble(
         id_order = {pid: i for i, pid in enumerate(included_project_ids)}
         projects = sorted(
             [p for p in prj_pool if p["id"] in id_order],
-            key=lambda p: id_order[p["id"]]
+            key=lambda p: id_order[p["id"]],
         )
     else:
         projects = [p for p in prj_pool if _any_match(p["keyword_ids"], profile_kw_ids)]
 
     # apply per-project text and name overrides from the editor
     if project_text_overrides or project_name_overrides:
+
         def _apply(p):
             out = dict(p)
             if project_text_overrides and p["id"] in project_text_overrides:
@@ -156,61 +162,97 @@ def _assemble(
             if project_name_overrides and p["id"] in project_name_overrides:
                 out["name"] = project_name_overrides[p["id"]]
             return out
+
         projects = [_apply(p) for p in projects]
 
     # education
     education = data["education"]
     if included_education_ids is not None:
-        id_order  = {eid: i for i, eid in enumerate(included_education_ids)}
+        id_order = {eid: i for i, eid in enumerate(included_education_ids)}
         education = sorted(
             [e for e in education if e["id"] in id_order],
-            key=lambda e: id_order[e["id"]]
+            key=lambda e: id_order[e["id"]],
         )
 
     # apply education overrides from the editor
     if education_overrides:
+
         def _apply_edu(e):
             ov = education_overrides.get(e["id"])
             return {**e, **ov} if ov else e
+
         education = [_apply_edu(e) for e in education]
+
+    # languages — apply per-application overrides
+    languages = data["languages"]
+    if included_languages is not None:
+        # Build lookup from original languages
+        lang_map = {l["id"]: l for l in languages}
+        # Apply overrides from included_languages
+        languages = []
+        for lang_data in included_languages:
+            lang_id = lang_data.get("id")
+            original = lang_map.get(lang_id) if lang_id else None
+            if original or not lang_id:
+                # Use override values if provided, otherwise fall back to original
+                name = lang_data.get("name") or (
+                    original.get("name") if original else ""
+                )
+                prof = lang_data.get("proficiency_level") or (
+                    original.get("proficiency_level") if original else ""
+                )
+                if name:  # Only include if has a name
+                    languages.append(
+                        {
+                            "id": lang_id,
+                            "name": name,
+                            "proficiency_level": prof,
+                        }
+                    )
 
     # section order + enabled
     ps = data["profile_settings"]
     if section_order_override is not None:
-        section_order    = section_order_override
+        section_order = section_order_override
         sections_enabled = sections_enabled_override or {}
     elif ps and ps.get("section_order"):
-        section_order    = json.loads(ps["section_order"])
-        sections_enabled = {k: bool(v) for k, v in json.loads(ps["sections_enabled"]).items()}
+        section_order = json.loads(ps["section_order"])
+        sections_enabled = {
+            k: bool(v) for k, v in json.loads(ps["sections_enabled"]).items()
+        }
     else:
-        section_order    = json.loads(data["settings"]["section_order"])
+        section_order = json.loads(data["settings"]["section_order"])
         sections_enabled = {
             k: bool(v)
             for k, v in json.loads(data["settings"]["sections_enabled"]).items()
         }
 
+    date_fmt = (data["settings"] or {}).get("date_format") or "YYYY"
+
     return build_context(
-        contact           = contact,
-        websites          = websites,
-        summary           = summary,
-        experiences       = experiences,
-        education         = education,
-        projects          = projects,
-        keywords          = all_kws,
-        section_order     = section_order,
-        sections_enabled  = sections_enabled,
-        template_settings = template,
-        date_format       = "MMM YYYY",
+        contact=contact,
+        websites=websites,
+        summary=summary,
+        experiences=experiences,
+        education=education,
+        languages=languages,
+        projects=projects,
+        keywords=all_kws,
+        section_order=section_order,
+        sections_enabled=sections_enabled,
+        template_settings=template,
+        date_format=date_fmt,
     )
 
 
 def _render(context: dict) -> bytes:
-    html     = render_from_file("default.html", context)
+    html = render_from_file("default.html", context)
     base_url = TEMPLATES_DIR.as_uri() + "/"
     return html_to_pdf_bytes_sync(html, base_url=base_url)
 
 
 # ── public API ────────────────────────────────────────────────────────
+
 
 def generate_resume_pdf(db_path: Path, profile_id: int) -> bytes:
     """Profile-only generation. Used by the toolbar Generate button."""
@@ -233,6 +275,8 @@ def generate_resume_pdf_for_app(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    included_languages: list[dict] | None = None,
+    experience_overrides: dict[int, dict] | None = None,
     education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
     project_name_overrides: dict[int, str] | None = None,
@@ -244,22 +288,27 @@ def generate_resume_pdf_for_app(
     db = Database(db_path)
     db.connect()
     try:
-        return _render(_assemble(
-            db, profile_id,
-            explicit_keyword_ids      = explicit_keyword_ids,
-            section_order_override    = section_order,
-            sections_enabled_override = sections_enabled,
-            bullet_overrides          = bullet_overrides,
-            included_bullets_map      = included_bullets_map,
-            included_experience_ids   = included_experience_ids,
-            included_education_ids    = included_education_ids,
-            included_project_ids      = included_project_ids,
-            education_overrides       = education_overrides,
-            project_text_overrides    = project_text_overrides,
-            project_name_overrides    = project_name_overrides,
-            contact_override          = contact_override,
-            websites_override         = websites_override,
-            summary_text_override     = summary_text_override,
-        ))
+        return _render(
+            _assemble(
+                db,
+                profile_id,
+                explicit_keyword_ids=explicit_keyword_ids,
+                section_order_override=section_order,
+                sections_enabled_override=sections_enabled,
+                bullet_overrides=bullet_overrides,
+                included_bullets_map=included_bullets_map,
+                included_experience_ids=included_experience_ids,
+                included_education_ids=included_education_ids,
+                included_project_ids=included_project_ids,
+                included_languages=included_languages,
+                experience_overrides=experience_overrides,
+                education_overrides=education_overrides,
+                project_text_overrides=project_text_overrides,
+                project_name_overrides=project_name_overrides,
+                contact_override=contact_override,
+                websites_override=websites_override,
+                summary_text_override=summary_text_override,
+            )
+        )
     finally:
         db.close()

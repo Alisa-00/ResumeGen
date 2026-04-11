@@ -1,14 +1,21 @@
 """
 ui/wizard/step_details.py
-Wizard step 1: job details + profile + extra keywords.
+Wizard step 1: job details + profile + extra keywords + job posting URL/description.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QComboBox, QMessageBox,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QLabel,
+    QComboBox,
+    QMessageBox,
+    QLineEdit,
+    QTextEdit,
 )
 
 from db.database import Database
@@ -21,42 +28,79 @@ class StepDetails(QWidget):
     def __init__(self, db: Database, application: dict | None = None, parent=None):
         super().__init__(parent)
         self.db = db
+        self._application = application
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(48, 32, 48, 32)
         outer.setSpacing(16)
 
         outer.addWidget(section_title("New Application — Step 1 of 2"))
-        outer.addWidget(QLabel("Fill in the job details and choose a profile to base this resume on."))
+        outer.addWidget(
+            QLabel(
+                "Fill in the job details and choose a profile to base this resume on."
+            )
+        )
         outer.addWidget(hline())
 
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setVerticalSpacing(10)
 
-        self.f_company  = field("e.g. Acme Corp",             (application or {}).get("company_name", ""))
-        self.f_position = field("e.g. Senior Python Engineer", (application or {}).get("position_name", ""))
+        self.f_company = field(
+            "e.g. Acme Corp", (application or {}).get("company_name", "")
+        )
+        self.f_position = field(
+            "e.g. Senior Python Engineer", (application or {}).get("position_name", "")
+        )
 
         self.f_profile = QComboBox()
         self.f_profile.setMinimumWidth(220)
         self._load_profiles((application or {}).get("profile_id"))
 
+        # Job posting URL
+        self.f_url = QLineEdit()
+        self.f_url.setPlaceholderText("https://careers.example.com/jobs/12345")
+        self.f_url.setText((application or {}).get("job_posting_url", ""))
+
+        # Job posting description
+        self.f_description = QTextEdit()
+        self.f_description.setPlaceholderText("Paste the full job description here...")
+        self.f_description.setMinimumHeight(120)
+        self.f_description.setText(
+            (application or {}).get("job_posting_description", "")
+        )
+        self.f_description.setStyleSheet("""
+            QTextEdit {
+                background: #1e1e2e;
+                border: 1px solid #313244;
+                border-radius: 4px;
+                padding: 8px;
+                color: #cdd6f4;
+            }
+        """)
+
         for lbl, w in [
-            ("Company",  self.f_company),
+            ("Company", self.f_company),
             ("Position", self.f_position),
-            ("Profile",  self.f_profile),
+            ("Profile", self.f_profile),
+            ("Job URL", self.f_url),
         ]:
             form.addRow(lbl, w)
+
+        form.addRow("Job Description", self.f_description)
         outer.addLayout(form)
 
         outer.addWidget(QLabel("Extra keywords for this specific position:"))
-        hint = QLabel("Keywords from the selected profile are pre-filled. Add more as needed.")
+        hint = QLabel(
+            "Keywords from the selected profile are pre-filled. Add more as needed."
+        )
         hint.setStyleSheet("color: #a6adc8; font-size: 12px;")
         outer.addWidget(hint)
 
         import json
+
         saved_extra = json.loads((application or {}).get("extra_keywords", "[]"))
-        all_kw      = self.db.get_keywords()
+        all_kw = self.db.get_keywords()
         self.kw_tagger = KeywordTagger(all_kw, saved_extra)
         outer.addWidget(self.kw_tagger)
 
@@ -103,9 +147,12 @@ class StepDetails(QWidget):
 
     def _on_next(self):
         from datetime import date as _date
-        company    = self.f_company.text().strip()
-        position   = self.f_position.text().strip()
+
+        company = self.f_company.text().strip()
+        position = self.f_position.text().strip()
         profile_id = self.f_profile.currentData()
+        url = self.f_url.text().strip()
+        description = self.f_description.toPlainText().strip()
 
         if not company:
             QMessageBox.warning(self, "Missing field", "Please enter a company name.")
@@ -117,10 +164,14 @@ class StepDetails(QWidget):
             QMessageBox.warning(self, "Missing field", "Please select a profile.")
             return
 
-        self.next_requested.emit({
-            "company_name":  company,
-            "position_name": position,
-            "profile_id":    profile_id,
-            "date_applied":  _date.today().strftime("%Y-%m-%d"),
-            "extra_kw_ids":  self.kw_tagger.selected_ids(),
-        })
+        self.next_requested.emit(
+            {
+                "company_name": company,
+                "position_name": position,
+                "profile_id": profile_id,
+                "date_applied": _date.today().strftime("%Y-%m-%d"),
+                "extra_kw_ids": self.kw_tagger.selected_ids(),
+                "job_posting_url": url,
+                "job_posting_description": description,
+            }
+        )
