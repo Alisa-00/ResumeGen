@@ -1008,26 +1008,197 @@ class _ProjectsContent(QWidget):
         return overrides
 
 
-class _LanguagesContent(QWidget):
-    """Simple display-only widget for languages (editing happens in main editor)."""
+class _LanguageRow(QWidget):
+    """Single language row: arrows, fixed name label, proficiency field, remove."""
 
-    def __init__(self, languages: list[dict], parent=None):
+    removed = Signal(object)
+    moved_up = Signal(object)
+    moved_down = Signal(object)
+    changed = Signal()
+
+    def __init__(
+        self,
+        lang: dict,
+        proficiency_override: str | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
+        self.item_id = lang.get("id")
+        self._original = lang
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(8)
+
+        # Up/Down arrows (48x48, same as _SubItem)
+        for arrow, sig in [("▲", self.moved_up), ("▼", self.moved_down)]:
+            btn = QPushButton(arrow)
+            btn.setFixedSize(48, 48)
+            btn.setFlat(True)
+            btn.setStyleSheet(
+                "QPushButton { font-size: 22px; color: #89b4fa;"
+                " background-color: #313244; border-radius: 6px; border: none;"
+                " min-height: 0; min-width: 0; }"
+                "QPushButton:hover { background-color: #45475a; }"
+            )
+            btn.clicked.connect(lambda _=None, s=sig: s.emit(self))
+            root.addWidget(btn)
+
+        # Fixed language name label (like website label)
+        name_lbl = QLabel(f"{lang.get('name', '')}:")
+        name_lbl.setFixedWidth(120)
+        name_lbl.setStyleSheet(
+            "color: #a6adc8; font-size: 18px;"
+            " border: 1px solid #313244; border-radius: 3px; padding: 4px 6px;"
+        )
+        root.addWidget(name_lbl)
+
+        # Proficiency field (always visible, expands like website URL)
+        self._proficiency = QLineEdit()
+        current_prof = (
+            proficiency_override
+            if proficiency_override is not None
+            else lang.get("proficiency_level", "")
+        )
+        self._proficiency.setText(current_prof)
+        self._proficiency.setPlaceholderText(
+            "e.g. Native, Full Professional Proficiency"
+        )
+        self._proficiency.setStyleSheet(
+            "QLineEdit { background: #141618; border: 1px solid #89b4fa;"
+            " border-radius: 4px; padding: 4px 8px; color: #cdd6f4; }"
+        )
+        self._proficiency.textChanged.connect(self.changed)
+        root.addWidget(self._proficiency, 1)
+
+        # Remove button
+        rm = small_danger_btn()
+        rm.clicked.connect(lambda: self.removed.emit(self))
+        root.addWidget(rm)
+
+    def get_data(self) -> dict:
+        """Return current data with proficiency."""
+        return {
+            "id": self._original.get("id"),
+            "name": self._original.get("name", ""),
+            "proficiency_level": self._proficiency.text().strip(),
+        }
+
+
+class _LanguagesContent(QWidget):
+    """Editable language list with picker for existing languages only."""
+
+    changed = Signal()
+
+    def __init__(
+        self,
+        languages: list[dict],
+        included_languages: list[dict] | None,
+        all_languages: list[dict],
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._all = all_languages
+        self._rows: list[_LanguageRow] = []
+
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(4)
 
-        if languages:
-            for lang in languages:
-                lbl = QLabel(f"• {lang['name']}: {lang['proficiency_level']}")
-                lbl.setStyleSheet("color: #cdd6f4; font-size: 16px;")
-                root.addWidget(lbl)
-        else:
-            empty = QLabel("No languages added. Add them in the Languages section.")
-            empty.setStyleSheet("color: #585b70; font-size: 16px;")
-            root.addWidget(empty)
+        self._rows_layout = QVBoxLayout()
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(4)
+        root.addLayout(self._rows_layout)
 
-        root.addStretch()
+        add_btn = flat_link_btn("+ Add language")
+        add_btn.clicked.connect(self._add_picker)
+        root.addWidget(add_btn)
+
+        # Build lookup of all available languages
+        all_lang_map = {l["id"]: l for l in all_languages}
+
+        # Populate with included languages
+        if included_languages:
+            for lang_data in included_languages:
+                lang_id = lang_data.get("id")
+                if lang_id and lang_id in all_lang_map:
+                    original = all_lang_map[lang_id]
+                    self._add_row(
+                        original,
+                        proficiency_override=lang_data.get("proficiency_level"),
+                    )
+        elif languages:
+            # Fallback: use provided languages directly
+            for lang in languages:
+                self._add_row(lang)
+
+    def _add_row(self, lang: dict, proficiency_override: str | None = None):
+        """Add a language row."""
+        row = _LanguageRow(lang, proficiency_override)
+        row.removed.connect(self._remove_row)
+        row.moved_up.connect(self._move_up)
+        row.moved_down.connect(self._move_down)
+        row.changed.connect(self.changed)
+        self._rows.append(row)
+        self._rows_layout.addWidget(row)
+        self.changed.emit()
+
+    def _remove_row(self, row: _LanguageRow):
+        """Remove a language row."""
+        if row in self._rows:
+            self._rows.remove(row)
+            self._rows_layout.removeWidget(row)
+            row.deleteLater()
+            self.changed.emit()
+
+    def _move_up(self, row: _LanguageRow):
+        """Move row up one position."""
+        idx = self._rows.index(row)
+        if idx > 0:
+            self._rows[idx], self._rows[idx - 1] = self._rows[idx - 1], self._rows[idx]
+            _reorder_layout(self._rows_layout, self._rows)
+            self.changed.emit()
+
+    def _move_down(self, row: _LanguageRow):
+        """Move row down one position."""
+        idx = self._rows.index(row)
+        if idx < len(self._rows) - 1:
+            self._rows[idx], self._rows[idx + 1] = self._rows[idx + 1], self._rows[idx]
+            _reorder_layout(self._rows_layout, self._rows)
+            self.changed.emit()
+
+    def _add_picker(self):
+        """Show picker to add an existing language not already included."""
+        current_ids = {r.item_id for r in self._rows}
+        avail = [(l["id"], l["name"]) for l in self._all if l["id"] not in current_ids]
+        if not avail:
+            QMessageBox.information(
+                self.window(),
+                "Nothing to add",
+                "All languages from your profile are already included.",
+            )
+            return
+        dlg = _PickerDialog("Add Language", avail, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            lang_id = dlg.selected_id()
+            if lang_id:
+                lang = next(l for l in self._all if l["id"] == lang_id)
+                self._add_row(lang)
+
+    def included_languages(self) -> list[dict]:
+        """Return list of language data for serialization."""
+        return [row.get_data() for row in self._rows]
+
+    def get_proficiency_overrides(self) -> dict[int, str]:
+        """Return map of language ID to proficiency override."""
+        overrides = {}
+        for row in self._rows:
+            lang_id = row._original.get("id")
+            if lang_id is not None:
+                ov = row.get_proficiency_override()
+                if ov is not None:
+                    overrides[lang_id] = ov
+        return overrides
 
 
 class _KeywordsContent(QWidget):
@@ -1301,6 +1472,11 @@ class StepPreview(QWidget):
         self._regen_token = 0
         self._active_tasks: set = set()
 
+        # State tracking for concurrency protection
+        self._is_processing: bool = False
+        self._pending_regen: bool = False
+        self._pending_save: bool = False
+
         self._bullet_overrides: dict[int, str] = {}
         self._app: dict | None = None
         if application_id:
@@ -1317,13 +1493,8 @@ class StepPreview(QWidget):
         self._debounce.setInterval(DEBOUNCE_MS)
         self._debounce.timeout.connect(self._regenerate)
 
-        self._save_debounce = QTimer()
-        self._save_debounce.setSingleShot(True)
-        self._save_debounce.setInterval(1000)
-        self._save_debounce.timeout.connect(self._save)
-
         self._build_ui()
-        self._schedule_regen()
+        self._on_change()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -1376,8 +1547,8 @@ class StepPreview(QWidget):
         hint.setStyleSheet("color: #585b70; font-size: 16px;")
         ll.addWidget(hint)
         self._section_list = SectionList()
-        self._section_list.order_changed.connect(self._schedule_regen)
-        self._section_list.toggle_changed.connect(self._schedule_regen)
+        self._section_list.order_changed.connect(self._on_change)
+        self._section_list.toggle_changed.connect(self._on_change)
         self._populate_sections()
         ll.addWidget(self._section_list, 1)
 
@@ -1428,6 +1599,11 @@ class StepPreview(QWidget):
         inc_prj = (
             json.loads(app["included_projects"])
             if app and app.get("included_projects")
+            else None
+        )
+        inc_lang = (
+            json.loads(app["included_languages"])
+            if app and app.get("included_languages")
             else None
         )
         inc_bullets = (
@@ -1482,6 +1658,7 @@ class StepPreview(QWidget):
                 inc_exp,
                 inc_edu,
                 inc_prj,
+                inc_lang,
                 None,
                 extra,
                 saved_contact,
@@ -1504,6 +1681,7 @@ class StepPreview(QWidget):
         inc_exp,
         inc_edu,
         inc_prj,
+        inc_lang,
         sel_sum,
         extra_kw_ids,
         saved_contact=None,
@@ -1527,7 +1705,7 @@ class StepPreview(QWidget):
             )
             all_websites = data.get("websites") or []
             w = _ContactContent(contact, websites, all_websites)
-            w.changed.connect(self._schedule_regen)
+            w.changed.connect(self._on_change)
             return w
         if key == "summary":
             w = _SummaryContent(
@@ -1535,7 +1713,7 @@ class StepPreview(QWidget):
                 self.job_data["profile_id"],
                 saved_sum_text,
             )
-            w.changed.connect(self._schedule_regen)
+            w.changed.connect(self._on_change)
             return w
         if key == "experience":
             w = _ExperienceContent(
@@ -1545,19 +1723,24 @@ class StepPreview(QWidget):
                 inc_bullets,
                 exp_overrides,
             )
-            w.changed.connect(self._schedule_regen)
-            w.changed.connect(self._save_debounce.start)
+            w.changed.connect(self._on_change)
             return w
         if key == "education":
             w = _EducationContent(data.get("education") or [], inc_edu, edu_overrides)
-            w.changed.connect(self._schedule_regen)
+            w.changed.connect(self._on_change)
             return w
         if key == "languages":
-            w = _LanguagesContent(data.get("languages") or [])
+            all_languages = self.db.get_languages()
+            w = _LanguagesContent(
+                data.get("languages") or [],
+                inc_lang,
+                all_languages,
+            )
+            w.changed.connect(self._on_change)
             return w
         if key == "projects":
             w = _ProjectsContent(data.get("projects") or [], inc_prj)
-            w.changed.connect(self._schedule_regen)
+            w.changed.connect(self._on_change)
             return w
         if key == "keywords":
             if saved_kw_list is not None:
@@ -1570,18 +1753,23 @@ class StepPreview(QWidget):
                         seen.add(i)
                         initial_ids.append(i)
             w = _KeywordsContent(self._all_kw, initial_ids)
-            w.changed.connect(self._schedule_regen)
+            w.changed.connect(self._on_change)
             return w
         return None
 
-    def _schedule_regen(self):
-        self._status_lbl.setText("Regenerating…")
+    def _on_change(self):
+        """Called on any section change. Schedules regeneration and subsequent save."""
+        if self._is_processing:
+            self._pending_regen = True
+            return
+        self._status_lbl.setText("Updating...")
         self._debounce.start()
 
     def _get_state(self) -> dict:
         exp_c = self._section_list.get_content("experience")
         edu_c = self._section_list.get_content("education")
         prj_c = self._section_list.get_content("projects")
+        lang_c = self._section_list.get_content("languages")
         kw_c = self._section_list.get_content("keywords")
         sum_c = self._section_list.get_content("summary")
         con_c = self._section_list.get_content("contact")
@@ -1625,6 +1813,9 @@ class StepPreview(QWidget):
             project_name_overrides=prj_c.get_name_overrides()
             if isinstance(prj_c, _ProjectsContent)
             else {},
+            included_languages=lang_c.included_languages()
+            if isinstance(lang_c, _LanguagesContent)
+            else None,
             keyword_ids=kw_c.active_ids()
             if isinstance(kw_c, _KeywordsContent)
             else list(self._profile_kw_ids),
@@ -1638,6 +1829,7 @@ class StepPreview(QWidget):
     def _regenerate(self):
         from resume.generator import generate_resume_pdf_for_app
 
+        self._is_processing = True
         self._regen_token += 1
         token = self._regen_token
         s = self._get_state()
@@ -1653,6 +1845,7 @@ class StepPreview(QWidget):
             s["included_experiences"],
             s["included_education"],
             s["included_projects"],
+            s["included_languages"],
             s["experience_overrides"],
             s["education_overrides"],
             s["project_text_overrides"],
@@ -1669,74 +1862,109 @@ class StepPreview(QWidget):
         QThreadPool.globalInstance().start(task)
 
     def _on_regen_done(self, pdf_bytes: bytes, token: int, task):
+        """PDF success - update preview, then chain save to DB."""
         self._active_tasks.discard(task)
         if token != self._regen_token:
+            self._is_processing = False
             return
         self._pdf_bytes = pdf_bytes
         self._preview.load_bytes(pdf_bytes)
-        self._status_lbl.setText("Preview updated ✓")
+        self._status_lbl.setText("Preview updated")
+        # Chain to save (only on successful regen)
+        self._save()
 
     def _on_regen_error(self, msg: str, task):
+        """PDF failed - don't save, show error, check for pending operations."""
         self._active_tasks.discard(task)
+        self._is_processing = False
         self._status_lbl.setText(f"Error: {msg}")
+        # Save is NOT triggered - preserves last good state
+        # Check if another regen was requested during processing
+        if self._pending_regen:
+            self._pending_regen = False
+            self._on_change()
 
     def _save(self):
+        """Save to DB. Called only after successful PDF regeneration."""
+        try:
+            self._do_save()
+        except Exception as e:
+            self._status_lbl.setText(f"Save failed: {e}")
+        finally:
+            self._is_processing = False
+            # Check if another change was queued during save
+            if self._pending_regen:
+                self._pending_regen = False
+                self._on_change()
+
+    def _do_save(self):
+        """Perform the actual database save within a transaction."""
         s = self._get_state()
         jd = self.job_data
 
-        self.application_id = self.db.upsert_application(
-            profile_id=jd["profile_id"],
-            status_id=jd.get("status_id", 1),
-            position_name=jd["position_name"],
-            company_name=jd["company_name"],
-            date_applied=jd.get("date_applied", ""),
-            extra_keywords=json.dumps(s["keyword_ids"]),
-            section_order=json.dumps(s["section_order"]),
-            sections_enabled=json.dumps(
-                {k: int(v) for k, v in s["sections_enabled"].items()}
-            ),
-            summary_text_override=s["summary_text_override"],
-            contact_override=json.dumps(s["contact_override"])
-            if s["contact_override"]
-            else None,
-            websites_override=json.dumps(s["websites_override"])
-            if s["websites_override"] is not None
-            else None,
-            included_experiences=json.dumps(s["included_experiences"])
-            if s["included_experiences"] is not None
-            else None,
-            included_education=json.dumps(s["included_education"])
-            if s["included_education"] is not None
-            else None,
-            included_projects=json.dumps(s["included_projects"])
-            if s["included_projects"] is not None
-            else None,
-            included_bullets=json.dumps(s["included_bullets_map"])
-            if s["included_bullets_map"] is not None
-            else None,
-            education_overrides=json.dumps(
-                {str(k): v for k, v in s["education_overrides"].items()}
+        # Use explicit transaction for atomicity
+        self.db._conn.execute("BEGIN")
+        try:
+            self.application_id = self.db.upsert_application(
+                profile_id=jd["profile_id"],
+                status_id=jd.get("status_id", 1),
+                position_name=jd["position_name"],
+                company_name=jd["company_name"],
+                date_applied=jd.get("date_applied", ""),
+                extra_keywords=json.dumps(s["keyword_ids"]),
+                section_order=json.dumps(s["section_order"]),
+                sections_enabled=json.dumps(
+                    {k: int(v) for k, v in s["sections_enabled"].items()}
+                ),
+                summary_text_override=s["summary_text_override"],
+                contact_override=json.dumps(s["contact_override"])
+                if s["contact_override"]
+                else None,
+                websites_override=json.dumps(s["websites_override"])
+                if s["websites_override"] is not None
+                else None,
+                included_experiences=json.dumps(s["included_experiences"])
+                if s["included_experiences"] is not None
+                else None,
+                included_education=json.dumps(s["included_education"])
+                if s["included_education"] is not None
+                else None,
+                included_projects=json.dumps(s["included_projects"])
+                if s["included_projects"] is not None
+                else None,
+                included_languages=json.dumps(s["included_languages"])
+                if s["included_languages"] is not None
+                else None,
+                included_bullets=json.dumps(s["included_bullets_map"])
+                if s["included_bullets_map"] is not None
+                else None,
+                education_overrides=json.dumps(
+                    {str(k): v for k, v in s["education_overrides"].items()}
+                )
+                if s["education_overrides"]
+                else None,
+                experience_overrides=json.dumps(
+                    {str(k): v for k, v in s["experience_overrides"].items()}
+                )
+                if s["experience_overrides"]
+                else None,
+                id=self.application_id,
             )
-            if s["education_overrides"]
-            else None,
-            experience_overrides=json.dumps(
-                {str(k): v for k, v in s["experience_overrides"].items()}
+            # save the full explicit keyword list so reopening uses it directly
+            self.db._conn.execute(
+                "UPDATE job_application SET keyword_list=? WHERE id=?",
+                (json.dumps(s["keyword_ids"]), self.application_id),
             )
-            if s["experience_overrides"]
-            else None,
-            id=self.application_id,
-        )
-        # save the full explicit keyword list so reopening uses it directly
-        self.db.execute(
-            "UPDATE job_application SET keyword_list=? WHERE id=?",
-            (json.dumps(s["keyword_ids"]), self.application_id),
-        )
-        self.db.clear_bullet_overrides(self.application_id)
-        for bp_id, text in s["bullet_overrides"].items():
-            self.db.set_bullet_override(self.application_id, bp_id, text)
+            self.db.clear_bullet_overrides(self.application_id)
+            for bp_id, text in s["bullet_overrides"].items():
+                self.db.set_bullet_override(self.application_id, bp_id, text)
+            self.db._conn.commit()
+        except Exception:
+            self.db._conn.rollback()
+            raise
 
         self.saved.emit(self.application_id)
-        self._status_lbl.setText("Saved ✓")
+        self._status_lbl.setText("Saved")
 
     def _download(self):
         if not self._pdf_bytes:

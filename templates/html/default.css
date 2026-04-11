@@ -169,9 +169,30 @@ section {
 }
 
 /* ── Languages ─────────────────────────────────────────────────── */
-.languages-list {
-    font-size: 0.93em;
-    line-height: 1.6;
+.languages-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4pt 12pt;
+    margin-top: 4pt;
+}
+
+.language-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.language-name {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #333;
+    line-height: 1.25;
+}
+
+.language-level {
+    font-size: 0.8em;
+    color: #666;
+    line-height: 1.25;
+    margin-top: 0.5pt;
 }
 
 /* ── Bullet points ──────────────────────────────────────────── */

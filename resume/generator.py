@@ -80,6 +80,7 @@ def _assemble(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    included_languages: list[dict] | None = None,
     experience_overrides: dict[int, dict] | None = None,
     education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
@@ -182,8 +183,32 @@ def _assemble(
 
         education = [_apply_edu(e) for e in education]
 
-    # languages
+    # languages — apply per-application overrides
     languages = data["languages"]
+    if included_languages is not None:
+        # Build lookup from original languages
+        lang_map = {l["id"]: l for l in languages}
+        # Apply overrides from included_languages
+        languages = []
+        for lang_data in included_languages:
+            lang_id = lang_data.get("id")
+            original = lang_map.get(lang_id) if lang_id else None
+            if original or not lang_id:
+                # Use override values if provided, otherwise fall back to original
+                name = lang_data.get("name") or (
+                    original.get("name") if original else ""
+                )
+                prof = lang_data.get("proficiency_level") or (
+                    original.get("proficiency_level") if original else ""
+                )
+                if name:  # Only include if has a name
+                    languages.append(
+                        {
+                            "id": lang_id,
+                            "name": name,
+                            "proficiency_level": prof,
+                        }
+                    )
 
     # section order + enabled
     ps = data["profile_settings"]
@@ -250,6 +275,7 @@ def generate_resume_pdf_for_app(
     included_experience_ids: list[int] | None = None,
     included_education_ids: list[int] | None = None,
     included_project_ids: list[int] | None = None,
+    included_languages: list[dict] | None = None,
     experience_overrides: dict[int, dict] | None = None,
     education_overrides: dict[int, dict] | None = None,
     project_text_overrides: dict[int, str] | None = None,
@@ -274,6 +300,7 @@ def generate_resume_pdf_for_app(
                 included_experience_ids=included_experience_ids,
                 included_education_ids=included_education_ids,
                 included_project_ids=included_project_ids,
+                included_languages=included_languages,
                 experience_overrides=experience_overrides,
                 education_overrides=education_overrides,
                 project_text_overrides=project_text_overrides,

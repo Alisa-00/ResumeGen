@@ -95,9 +95,14 @@
     {% if section == "languages" and sections_enabled.languages and languages %}
     <section>
         <h2 class="section-heading">Languages</h2>
-        <p class="languages-list">
-            {% for lang in languages %}{{ lang.name }}: {{ lang.proficiency_level }}{% if not loop.last %} | {% endif %}{% endfor %}
-        </p>
+        <div class="languages-grid">
+            {% for lang in languages %}
+            <div class="language-item">
+                <div class="language-name">{{ lang.name }}</div>
+                <div class="language-level">{{ lang.proficiency_level }}</div>
+            </div>
+            {% endfor %}
+        </div>
     </section>
     {% endif %}
 

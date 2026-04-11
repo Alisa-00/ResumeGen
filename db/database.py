@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS job_application (
     included_experiences TEXT,
     included_education   TEXT,
     included_projects    TEXT,
+    included_languages TEXT,
     job_posting_url      TEXT,
     job_posting_description TEXT
 );
@@ -253,6 +254,7 @@ class Database:
             ("education", "school_url", "TEXT"),
             ("job_application", "job_posting_url", "TEXT"),
             ("job_application", "job_posting_description", "TEXT"),
+            ("job_application", "included_languages", "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -867,6 +869,7 @@ class Database:
         education_overrides: str | None = None,
         job_posting_url: str | None = None,
         job_posting_description: str | None = None,
+        included_languages: str | None = None,
         id: int | None = None,
     ) -> int:
         if id:
@@ -879,7 +882,8 @@ class Database:
                    contact_override=?, websites_override=?, experience_overrides=?,
                    included_experiences=?, included_education=?,
                    included_projects=?, included_bullets=?,
-                   education_overrides=?, job_posting_url=?, job_posting_description=?
+                   education_overrides=?, job_posting_url=?, job_posting_description=?,
+                   included_languages=?
                    WHERE id=?""",
                 (
                     profile_id,
@@ -903,6 +907,7 @@ class Database:
                     education_overrides,
                     job_posting_url,
                     job_posting_description,
+                    included_languages,
                     id,
                 ),
             )
@@ -915,8 +920,9 @@ class Database:
                 contact_override, websites_override, experience_overrides,
                 included_experiences, included_education,
                 included_projects, included_bullets,
-                education_overrides, job_posting_url, job_posting_description)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                education_overrides, job_posting_url, job_posting_description,
+                included_languages)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 profile_id,
                 status_id,
@@ -938,6 +944,7 @@ class Database:
                 education_overrides,
                 job_posting_url,
                 job_posting_description,
+                included_languages,
             ),
         )
 
