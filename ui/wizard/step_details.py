@@ -33,16 +33,18 @@ class _ReferralDialog(QDialog):
         email: str = "",
         phone: str = "",
         linkedin_url: str = "",
-        description: str = "",
         title: str = "Add Referral",
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumWidth(350)
-        self._build_ui(name, email, phone, linkedin_url, description)
+        self._initial_email = email
+        self._initial_phone = phone
+        self._initial_linkedin = linkedin_url
+        self._build_ui(name)
 
-    def _build_ui(self, name: str, email: str, phone: str, linkedin_url: str, description: str):
-        from PySide6.QtWidgets import QFormLayout, QDialogButtonBox, QTextEdit
+    def _build_ui(self, name: str):
+        from PySide6.QtWidgets import QFormLayout, QDialogButtonBox, QComboBox
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -50,35 +52,57 @@ class _ReferralDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(8)
 
+        # Name field
         self.name_edit = QLineEdit(name)
         self.name_edit.setPlaceholderText("Referral name")
         form.addRow("Name:*", self.name_edit)
 
-        self.email_edit = QLineEdit(email)
-        self.email_edit.setPlaceholderText("email@example.com")
-        form.addRow("Email:", self.email_edit)
+        # Contact method dropdown
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(["Email", "Phone", "LinkedIn"])
+        self.method_combo.currentIndexChanged.connect(self._on_method_changed)
+        form.addRow("Contact method:", self.method_combo)
 
-        self.phone_edit = QLineEdit(phone)
-        self.phone_edit.setPlaceholderText("+1 (555) 123-4567")
-        form.addRow("Phone:", self.phone_edit)
-
-        self.linkedin_edit = QLineEdit(linkedin_url)
-        self.linkedin_edit.setPlaceholderText("https://linkedin.com/in/...")
-        form.addRow("LinkedIn:", self.linkedin_edit)
-
-        self.desc_edit = QTextEdit(description)
-        self.desc_edit.setPlaceholderText("How you know this person, context, notes...")
-        self.desc_edit.setMinimumHeight(80)
-        form.addRow("Description:", self.desc_edit)
+        # Single contact input field (changes based on method)
+        self.contact_edit = QLineEdit()
+        self.contact_edit.setPlaceholderText("email@example.com")
+        form.addRow("Contact:", self.contact_edit)
 
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        # Set initial method based on which field has data
+        self._set_initial_method()
+
+    def _set_initial_method(self):
+        """Set the initial contact method based on existing data."""
+        if self._initial_phone:
+            self.method_combo.setCurrentText("Phone")
+            self.contact_edit.setText(self._initial_phone)
+        elif self._initial_linkedin:
+            self.method_combo.setCurrentText("LinkedIn")
+            self.contact_edit.setText(self._initial_linkedin)
+        else:
+            # Default to email
+            self.method_combo.setCurrentText("Email")
+            self.contact_edit.setText(self._initial_email)
+
+    def _on_method_changed(self, index: int):
+        """Update placeholder text when method changes."""
+        method = self.method_combo.currentText()
+        if method == "Email":
+            self.contact_edit.setPlaceholderText("email@example.com")
+        elif method == "Phone":
+            self.contact_edit.setPlaceholderText("+1 (555) 123-4567")
+        elif method == "LinkedIn":
+            self.contact_edit.setPlaceholderText("https://linkedin.com/in/...")
 
     def _on_save(self):
         if not self.name_edit.text().strip():
@@ -87,12 +111,15 @@ class _ReferralDialog(QDialog):
         self.accept()
 
     def get_data(self) -> dict:
+        """Return data with only the selected contact method populated."""
+        method = self.method_combo.currentText()
+        contact_value = self.contact_edit.text().strip() or None
+
         return {
             "name": self.name_edit.text().strip(),
-            "email": self.email_edit.text().strip() or None,
-            "phone": self.phone_edit.text().strip() or None,
-            "linkedin_url": self.linkedin_edit.text().strip() or None,
-            "description": self.desc_edit.toPlainText().strip() or None,
+            "email": contact_value if method == "Email" else None,
+            "phone": contact_value if method == "Phone" else None,
+            "linkedin_url": contact_value if method == "LinkedIn" else None,
         }
 
 
@@ -255,7 +282,6 @@ class StepDetails(QWidget):
             email=ref.get("email", ""),
             phone=ref.get("phone", ""),
             linkedin_url=ref.get("linkedin_url", ""),
-            description=ref.get("description", ""),
             title="Edit Referral",
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -288,89 +314,95 @@ class StepDetails(QWidget):
         # Add widgets for each referral
         for i, ref in enumerate(self._referrals):
             widget = self._create_referral_widget(ref, i)
-            self._referrals_layout.insertWidget(self._referrals_layout.count() - 1, widget)
+            self._referrals_layout.insertWidget(
+                self._referrals_layout.count() - 1, widget
+            )
 
     def _create_referral_widget(self, ref: dict, index: int) -> QWidget:
-        from PySide6.QtWidgets import QTextEdit
-
+        """Create a referral widget with name, contact below, and buttons on right."""
         widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
-        widget.setStyleSheet("""
-            QWidget {
-                background: #181825;
-                border: 1px solid #313244;
-                border-radius: 4px;
-            }
-        """)
+        outer_layout = QHBoxLayout(widget)
+        outer_layout.setContentsMargins(0, 4, 0, 4)
+        outer_layout.setSpacing(8)
+        widget.setStyleSheet("background: transparent; border: none;")
 
-        # Name
+        # Left side: Name and contact info
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(2)
+        left_widget.setStyleSheet("background: transparent; border: none;")
+
+        # Name (bold)
         name_lbl = QLabel(ref.get("name", "Unnamed"))
-        name_lbl.setStyleSheet("font-weight: bold; color: #cdd6f4; background: transparent; border: none;")
-        layout.addWidget(name_lbl)
+        name_lbl.setStyleSheet(
+            "font-weight: bold; color: #cdd6f4; font-size: 12px; background: transparent; border: none;"
+        )
+        left_layout.addWidget(name_lbl)
 
-        # Contact info
-        contact_parts = []
-        if ref.get("email"):
-            contact_parts.append(f"📧 {ref['email']}")
+        # Contact info (if available)
+        contact_text = ""
         if ref.get("phone"):
-            contact_parts.append(f"📞 {ref['phone']}")
-        if ref.get("linkedin_url"):
-            contact_parts.append(f"🔗 LinkedIn")
+            contact_text = ref["phone"]
+        elif ref.get("email"):
+            contact_text = ref["email"]
+        elif ref.get("linkedin_url"):
+            contact_text = "LinkedIn profile"
 
-        if contact_parts:
-            contact_lbl = QLabel(" | ".join(contact_parts))
-            contact_lbl.setStyleSheet("color: #89b4fa; font-size: 11px; background: transparent; border: none;")
-            layout.addWidget(contact_lbl)
+        if contact_text:
+            contact_lbl = QLabel(contact_text)
+            contact_lbl.setStyleSheet(
+                "color: #a6adc8; font-size: 11px; background: transparent; border: none;"
+            )
+            left_layout.addWidget(contact_lbl)
 
-        # Description
-        if ref.get("description"):
-            desc_lbl = QLabel(ref["description"])
-            desc_lbl.setWordWrap(True)
-            desc_lbl.setStyleSheet("color: #a6adc8; font-size: 11px; background: transparent; border: none;")
-            layout.addWidget(desc_lbl)
+        outer_layout.addWidget(left_widget, 1)
 
-        # Edit/Delete buttons
-        btn_layout = QHBoxLayout()
+        # Buttons on the right side
+        btn_widget = QWidget()
+        btn_layout = QHBoxLayout(btn_widget)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
         btn_layout.setSpacing(4)
+        btn_widget.setStyleSheet("background: transparent; border: none;")
 
-        edit_btn = QPushButton("Edit")
+        # Small edit button
+        edit_btn = QPushButton("✎")
+        edit_btn.setToolTip("Edit")
+        edit_btn.setFixedSize(24, 24)
         edit_btn.setStyleSheet("""
             QPushButton {
-                background: #313244;
-                color: #cdd6f4;
-                border: 1px solid #45475a;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
+                background: transparent;
+                color: #a6adc8;
+                border: none;
+                font-size: 12px;
             }
             QPushButton:hover {
-                background: #45475a;
+                color: #cdd6f4;
             }
         """)
         edit_btn.clicked.connect(lambda: self._on_edit_referral(index))
 
-        del_btn = QPushButton("Delete")
+        # Small delete button
+        del_btn = QPushButton("×")
+        del_btn.setToolTip("Delete")
+        del_btn.setFixedSize(24, 24)
         del_btn.setStyleSheet("""
             QPushButton {
-                background: #313244;
+                background: transparent;
                 color: #f38ba8;
-                border: 1px solid #45475a;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
+                border: none;
+                font-size: 14px;
+                font-weight: bold;
             }
             QPushButton:hover {
-                background: #45475a;
+                color: #eba0ac;
             }
         """)
         del_btn.clicked.connect(lambda: self._on_delete_referral(index))
 
         btn_layout.addWidget(edit_btn)
         btn_layout.addWidget(del_btn)
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
+        outer_layout.addWidget(btn_widget)
 
         return widget
 
