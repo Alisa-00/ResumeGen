@@ -226,6 +226,7 @@ class _ReferralDialog(QDialog):
         phone: str = "",
         linkedin_url: str = "",
         title: str = "Add Referral",
+        show_delete: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -233,6 +234,8 @@ class _ReferralDialog(QDialog):
         self._initial_email = email
         self._initial_phone = phone
         self._initial_linkedin = linkedin_url
+        self._show_delete = show_delete
+        self._delete_requested = False
         self._build_ui(name)
 
     def _build_ui(self, name: str):
@@ -270,6 +273,25 @@ class _ReferralDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        # Add delete button for edit mode
+        if self._show_delete:
+            delete_btn = QPushButton("Delete Referral")
+            delete_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #f38ba8;
+                    border: 1px solid #f38ba8;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    margin-top: 12px;
+                }
+                QPushButton:hover {
+                    background: #313244;
+                }
+            """)
+            delete_btn.clicked.connect(self._on_delete)
+            layout.addWidget(delete_btn)
+
         # Set initial method based on which field has data
         self._set_initial_method()
 
@@ -302,6 +324,18 @@ class _ReferralDialog(QDialog):
             return
         self.accept()
 
+    def _on_delete(self):
+        reply = QMessageBox.question(
+            self,
+            "Delete Referral",
+            "Are you sure you want to delete this referral?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._delete_requested = True
+            self.accept()
+
     def get_data(self) -> dict:
         """Return data with only the selected contact method populated."""
         method = self.method_combo.currentText()
@@ -313,6 +347,9 @@ class _ReferralDialog(QDialog):
             "phone": contact_value if method == "Phone" else None,
             "linkedin_url": contact_value if method == "LinkedIn" else None,
         }
+
+    def is_delete_requested(self) -> bool:
+        return self._delete_requested
 
 
 # ── sidebar panel ──────────────────────────────────────────────────────
@@ -386,13 +423,10 @@ class _DetailsPanel(QWidget):
         )
         outer.addWidget(self.referrals_title_lbl)
 
-        # Referrals list directly in sidebar (no container wrapper)
-        self._referrals_layout_widget = QWidget()
-        self._referrals_layout = QVBoxLayout(self._referrals_layout_widget)
-        self._referrals_layout.setContentsMargins(0, 0, 0, 0)
-        self._referrals_layout.setSpacing(4)
-        self._referrals_layout.addStretch()
-        outer.addWidget(self._referrals_layout_widget)
+        # Referrals list - simple labels directly in sidebar (no containers)
+        # We store a spacer item to keep the Add button at the bottom
+        self._referral_labels: list[tuple[QLabel, int]] = []  # (label, referral_id)
+        self._referral_spacer = None  # Will be inserted after the last referral label
 
         # Add button - 13px font
         add_ref_btn = QPushButton("+ Add")
@@ -420,29 +454,10 @@ class _DetailsPanel(QWidget):
         lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-weight: bold;")
         return lbl
 
-    def _create_referral_widget(self, referral: dict) -> QWidget:
-        """Create a referral widget with name, contact below, and buttons on right."""
-        widget = QWidget()
-        outer_layout = QHBoxLayout(widget)
-        outer_layout.setContentsMargins(0, 4, 0, 4)
-        outer_layout.setSpacing(8)
-        widget.setStyleSheet("background: transparent; border: none;")
-
-        # Left side: Name and contact info
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(2)
-        left_widget.setStyleSheet("background: transparent; border: none;")
-
-        # Name (bold) - 14px
-        name_lbl = QLabel(referral.get("name", "Unnamed"))
-        name_lbl.setStyleSheet(
-            "font-weight: bold; color: #cdd6f4; font-size: 14px; background: transparent; border: none;"
-        )
-        left_layout.addWidget(name_lbl)
-
-        # Contact info (if available) - 13px
+    def _create_referral_label(self, referral: dict) -> tuple[QLabel, int]:
+        """Create a simple referral label with name and contact info.
+        Returns (label, referral_id) tuple."""
+        # Build contact text
         contact_text = ""
         if referral.get("phone"):
             contact_text = referral["phone"]
@@ -451,79 +466,82 @@ class _DetailsPanel(QWidget):
         elif referral.get("linkedin_url"):
             contact_text = "LinkedIn profile"
 
+        # Build the label text with HTML formatting
         if contact_text:
-            contact_lbl = QLabel(contact_text)
-            contact_lbl.setStyleSheet(
-                "color: #a6adc8; font-size: 13px; background: transparent; border: none;"
-            )
-            left_layout.addWidget(contact_lbl)
+            text = f"<b>{referral.get('name', 'Unnamed')}</b><br/><span style='color: #a6adc8;'>{contact_text}</span>"
+        else:
+            text = f"<b>{referral.get('name', 'Unnamed')}</b>"
 
-        outer_layout.addWidget(left_widget, 1)
-
-        # Buttons on the right side
-        btn_widget = QWidget()
-        btn_layout = QHBoxLayout(btn_widget)
-        btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(4)
-        btn_widget.setStyleSheet("background: transparent; border: none;")
-
-        # Edit button - 14px
-        edit_btn = QPushButton("✎")
-        edit_btn.setToolTip("Edit")
-        edit_btn.setFixedSize(28, 28)
-        edit_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                color: #a6adc8;
-                border: none;
-                font-size: 14px;
-            }
-            QPushButton:hover {
+        # Create the label
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setStyleSheet("""
+            QLabel {
                 color: #cdd6f4;
-            }
-        """)
-        edit_btn.clicked.connect(lambda: self._on_edit_referral(referral))
-
-        # Delete button - 16px
-        del_btn = QPushButton("×")
-        del_btn.setToolTip("Delete")
-        del_btn.setFixedSize(28, 28)
-        del_btn.setStyleSheet("""
-            QPushButton {
+                font-size: 14px;
                 background: transparent;
-                color: #f38ba8;
                 border: none;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                color: #eba0ac;
+                padding: 4px 0px;
             }
         """)
-        del_btn.clicked.connect(lambda: self._on_delete_referral(referral))
+        label.setTextFormat(Qt.TextFormat.RichText)
 
-        btn_layout.addWidget(edit_btn)
-        btn_layout.addWidget(del_btn)
-        outer_layout.addWidget(btn_widget)
+        # Store the referral_id as a property for click handling
+        label.setProperty("referral_id", referral["id"])
+        label.setProperty("referral_data", referral)
+        label.setCursor(Qt.CursorShape.PointingHandCursor)
+        label.mousePressEvent = lambda event, lbl=label: self._on_referral_clicked(lbl)
 
-        return widget
+        return (label, referral["id"])
+
+    def _on_referral_clicked(self, label: QLabel):
+        """Handle click on a referral label to edit it."""
+        referral = label.property("referral_data")
+        if referral:
+            self._on_edit_referral(referral)
 
     def _load_referrals(self):
-        # Clear existing referrals
-        while self._referrals_layout.count() > 1:
-            item = self._referrals_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Clear existing referral labels from the sidebar
+        for label, ref_id in self._referral_labels:
+            label.deleteLater()
+        self._referral_labels.clear()
+
+        # Remove and re-add the spacer if needed
+        if self._referral_spacer is not None:
+            # The spacer was added to the layout, we need to find it and remove it
+            # Actually, let's just rebuild the layout structure
+            pass
 
         if self._app_id is None:
             return
 
+        # Get the layout (outer is the sidebar layout)
+        outer = self.layout()
+        if not outer:
+            return
+
+        # Find the index of the "+ Add" button to insert before it
+        add_btn_index = -1
+        for i in range(outer.count()):
+            item = outer.itemAt(i)
+            widget = item.widget() if item else None
+            if isinstance(widget, QPushButton) and widget.text() == "+ Add":
+                add_btn_index = i
+                break
+
+        # If we found it, insert referrals before it
+        if add_btn_index > 0:
+            insert_index = add_btn_index
+        else:
+            # Otherwise insert before the stretch at the end
+            insert_index = outer.count() - 1
+
         referrals = self.db.get_application_referrals(self._app_id)
-        for referral in referrals:
-            widget = self._create_referral_widget(referral)
-            self._referrals_layout.insertWidget(
-                self._referrals_layout.count() - 1, widget
-            )
+        for i, referral in enumerate(referrals):
+            label, ref_id = self._create_referral_label(referral)
+            self._referral_labels.append((label, ref_id))
+            # Insert the label into the sidebar layout
+            outer.insertWidget(insert_index + i, label)
 
     def _on_add_referral(self):
         if self._app_id is None:
@@ -538,7 +556,7 @@ class _DetailsPanel(QWidget):
                 email=data["email"],
                 phone=data["phone"],
                 linkedin_url=data["linkedin_url"],
-                description=data["description"],
+                description=None,
             )
             self._load_referrals()
 
@@ -550,30 +568,23 @@ class _DetailsPanel(QWidget):
             phone=referral.get("phone", ""),
             linkedin_url=referral.get("linkedin_url", ""),
             title="Edit Referral",
+            show_delete=True,
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            data = dialog.get_data()
-            self.db.update_application_referral(
-                referral_id=referral["id"],
-                name=data["name"],
-                email=data.get("email"),
-                phone=data.get("phone"),
-                linkedin_url=data.get("linkedin_url"),
-                description=None,
-            )
-            self._load_referrals()
-
-    def _on_delete_referral(self, referral: dict):
-        if (
-            QMessageBox.question(
-                self,
-                "Delete Referral",
-                f"Delete referral for '{referral.get('name', 'Unnamed')}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            == QMessageBox.StandardButton.Yes
-        ):
-            self.db.delete_application_referral(referral["id"])
+            if dialog.is_delete_requested():
+                # Delete was requested
+                self.db.delete_application_referral(referral["id"])
+            else:
+                # Update the referral
+                data = dialog.get_data()
+                self.db.update_application_referral(
+                    referral_id=referral["id"],
+                    name=data["name"],
+                    email=data.get("email"),
+                    phone=data.get("phone"),
+                    linkedin_url=data.get("linkedin_url"),
+                    description=None,
+                )
             self._load_referrals()
 
     def set_application(self, app: dict):
@@ -646,10 +657,9 @@ class _DetailsPanel(QWidget):
         self.date_created_lbl.setVisible(False)
 
         # Clear referrals
-        while self._referrals_layout.count() > 1:
-            item = self._referrals_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        for label, ref_id in self._referral_labels:
+            label.deleteLater()
+        self._referral_labels.clear()
 
 
 # ── applications view ─────────────────────────────────────────────────
