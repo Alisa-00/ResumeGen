@@ -166,6 +166,7 @@ CREATE TABLE IF NOT EXISTS job_application (
     company_name         TEXT    NOT NULL,
     date_created         TEXT    NOT NULL,
     date_applied         TEXT,
+    date_last_updated    TEXT,
     extra_keywords       TEXT    NOT NULL DEFAULT '[]',
     section_order        TEXT,
     sections_enabled     TEXT,
@@ -280,6 +281,7 @@ class Database:
             ("job_application", "job_posting_description", "TEXT"),
             ("job_application", "included_languages", "TEXT"),
             ("job_application", "date_created", "TEXT"),
+            ("job_application", "date_last_updated", "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -897,14 +899,19 @@ class Database:
         included_languages: str | None = None,
         id: int | None = None,
         date_created: str | None = None,
+        date_last_updated: str | None = None,
     ) -> int:
         from datetime import date as _date
+
+        today = _date.today().strftime("%Y-%m-%d")
+        if date_last_updated is None:
+            date_last_updated = today
 
         if id:
             self.execute(
                 """UPDATE job_application SET
                    profile_id=?, status_id=?, position_name=?, company_name=?,
-                   date_applied=?, extra_keywords=?, section_order=?,
+                   date_applied=?, date_last_updated=?, extra_keywords=?, section_order=?,
                    sections_enabled=?, resume_pdf_path=?,
                    selected_summary_id=?, summary_text_override=?,
                    contact_override=?, websites_override=?, experience_overrides=?,
@@ -919,6 +926,7 @@ class Database:
                     position_name,
                     company_name,
                     date_applied,
+                    date_last_updated,
                     extra_keywords,
                     section_order,
                     sections_enabled,
@@ -945,14 +953,14 @@ class Database:
         return self.execute(
             """INSERT INTO job_application
                (profile_id, status_id, position_name, company_name,
-                date_created, date_applied, extra_keywords, section_order, sections_enabled,
+                date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
                 resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
                 contact_override, websites_override, experience_overrides,
                 included_experiences, included_education, included_projects, included_languages,
                 job_posting_url, job_posting_description)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            # 22 columns: profile_id, status_id, position_name, company_name,
-            #   date_created, date_applied, extra_keywords, section_order, sections_enabled,
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            # 23 columns: profile_id, status_id, position_name, company_name,
+            #   date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
             #   resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
             #   contact_override, websites_override, experience_overrides,
             #   included_experiences, included_education, included_projects, included_languages,
@@ -964,6 +972,7 @@ class Database:
                 company_name,
                 date_created,
                 date_applied,
+                date_last_updated,
                 extra_keywords,
                 section_order,
                 sections_enabled,

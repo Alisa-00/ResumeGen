@@ -323,8 +323,8 @@ class _DetailsPanel(QWidget):
         super().__init__(parent)
         self.db = db
         self._app_id: int | None = None
-        self.setMinimumWidth(280)
-        self.setMaximumWidth(360)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(540)
         self.setStyleSheet("""
             QWidget {
                 background: #1e1e2e;
@@ -343,22 +343,16 @@ class _DetailsPanel(QWidget):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
 
-        self.title_lbl = QLabel("Select an application")
-        self.title_lbl.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #cdd6f4;"
-        )
-        outer.addWidget(self.title_lbl)
-
-        # Company name (bold, no label)
-        self.company_lbl = QLabel("—")
+        # Company name as main title (bold)
+        self.company_lbl = QLabel("Select an application")
         self.company_lbl.setWordWrap(True)
         self.company_lbl.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #cdd6f4;"
+            "font-size: 16px; font-weight: bold; color: #cdd6f4;"
         )
         outer.addWidget(self.company_lbl)
 
-        # Position name (no label)
-        self.position_lbl = QLabel("—")
+        # Position name as subtitle
+        self.position_lbl = QLabel()
         self.position_lbl.setWordWrap(True)
         self.position_lbl.setStyleSheet("font-size: 13px; color: #a6adc8;")
         outer.addWidget(self.position_lbl)
@@ -374,6 +368,10 @@ class _DetailsPanel(QWidget):
         self.date_applied_lbl = QLabel()
         self.date_applied_lbl.setStyleSheet("font-size: 11px; color: #6c7086;")
         outer.addWidget(self.date_applied_lbl)
+
+        self.date_last_updated_lbl = QLabel()
+        self.date_last_updated_lbl.setStyleSheet("font-size: 11px; color: #6c7086;")
+        outer.addWidget(self.date_last_updated_lbl)
 
         self.date_created_lbl = QLabel()
         self.date_created_lbl.setStyleSheet("font-size: 11px; color: #6c7086;")
@@ -585,17 +583,17 @@ class _DetailsPanel(QWidget):
 
     def set_application(self, app: dict):
         self._app_id = app.get("id")
-        self.title_lbl.setText(f"Application #{app.get('id', '')}")
 
-        # Company (bold, hide if empty)
+        # Company as main title (hide if empty, show placeholder if no app selected)
         company = (app.get("company_name") or "").strip()
         if company:
             self.company_lbl.setText(company)
             self.company_lbl.setVisible(True)
         else:
-            self.company_lbl.setVisible(False)
+            self.company_lbl.setText("—")
+            self.company_lbl.setVisible(True)
 
-        # Position (hide if empty)
+        # Position as subtitle (hide if empty)
         position = (app.get("position_name") or "").strip()
         if position:
             self.position_lbl.setText(position)
@@ -623,6 +621,14 @@ class _DetailsPanel(QWidget):
         else:
             self.date_applied_lbl.setVisible(False)
 
+        # Last update date (hide if empty)
+        date_last_updated = (app.get("date_last_updated") or "").strip()
+        if date_last_updated:
+            self.date_last_updated_lbl.setText(f"Last update: {date_last_updated}")
+            self.date_last_updated_lbl.setVisible(True)
+        else:
+            self.date_last_updated_lbl.setVisible(False)
+
         # Created date (hide if empty)
         date_created = (app.get("date_created") or "").strip()
         if date_created:
@@ -635,13 +641,13 @@ class _DetailsPanel(QWidget):
 
     def clear(self):
         self._app_id = None
-        self.title_lbl.setText("Select an application")
-        self.company_lbl.setText("—")
+        self.company_lbl.setText("Select an application")
         self.company_lbl.setVisible(True)
-        self.position_lbl.setText("—")
-        self.position_lbl.setVisible(True)
+        self.position_lbl.setText("")
+        self.position_lbl.setVisible(False)
         self.job_link_lbl.setVisible(False)
         self.date_applied_lbl.setVisible(False)
+        self.date_last_updated_lbl.setVisible(False)
         self.date_created_lbl.setVisible(False)
 
         # Clear referrals
@@ -819,7 +825,7 @@ class ApplicationsView(QWidget):
         if not new_status_id:
             return
 
-        # Check if dropping to "applied" column
+        # ALWAYS update date_last_updated on every status change
         if new_status_key == "applied":
             # Get current application to check if date_applied already exists
             current_app = self.db.get_application(app_id)
@@ -834,27 +840,28 @@ class ApplicationsView(QWidget):
                     QMessageBox.StandardButton.No,
                 )
                 if reply == QMessageBox.StandardButton.Yes:
+                    # Update status, date_applied, and date_last_updated
                     self.db.execute(
-                        "UPDATE job_application SET status_id=?, date_applied=? WHERE id=?",
-                        (new_status_id, today, app_id),
+                        "UPDATE job_application SET status_id=?, date_applied=?, date_last_updated=? WHERE id=?",
+                        (new_status_id, today, today, app_id),
                     )
                 else:
-                    # Only update status, keep existing date_applied
+                    # Only update status and date_last_updated, keep existing date_applied
                     self.db.execute(
-                        "UPDATE job_application SET status_id=? WHERE id=?",
-                        (new_status_id, app_id),
+                        "UPDATE job_application SET status_id=?, date_last_updated=? WHERE id=?",
+                        (new_status_id, today, app_id),
                     )
             else:
-                # No existing date_applied, set both status and date
+                # No existing date_applied, set status, date_applied, and date_last_updated
                 self.db.execute(
-                    "UPDATE job_application SET status_id=?, date_applied=? WHERE id=?",
-                    (new_status_id, today, app_id),
+                    "UPDATE job_application SET status_id=?, date_applied=?, date_last_updated=? WHERE id=?",
+                    (new_status_id, today, today, app_id),
                 )
         else:
-            # Not moving to "applied", only update status
+            # Not moving to "applied", update status and date_last_updated only
             self.db.execute(
-                "UPDATE job_application SET status_id=? WHERE id=?",
-                (new_status_id, app_id),
+                "UPDATE job_application SET status_id=?, date_last_updated=? WHERE id=?",
+                (new_status_id, today, app_id),
             )
 
         self.refresh()
