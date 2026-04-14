@@ -343,61 +343,58 @@ class _DetailsPanel(QWidget):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
 
-        # Company name as main title (bold)
+        # Company name as main title (bold) - 20px
         self.company_lbl = QLabel("Select an application")
         self.company_lbl.setWordWrap(True)
         self.company_lbl.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #cdd6f4;"
+            "font-size: 20px; font-weight: bold; color: #cdd6f4;"
         )
         outer.addWidget(self.company_lbl)
 
-        # Position name as subtitle
+        # Position name as subtitle - 15px
         self.position_lbl = QLabel()
         self.position_lbl.setWordWrap(True)
-        self.position_lbl.setStyleSheet("font-size: 13px; color: #a6adc8;")
+        self.position_lbl.setStyleSheet("font-size: 15px; color: #a6adc8;")
         outer.addWidget(self.position_lbl)
 
-        # Job posting hyperlink (clickable)
+        # Job posting hyperlink (clickable) - 13px
         self.job_link_lbl = QLabel()
         self.job_link_lbl.setWordWrap(True)
         self.job_link_lbl.setOpenExternalLinks(True)
-        self.job_link_lbl.setStyleSheet("font-size: 11px; color: #89b4fa;")
+        self.job_link_lbl.setStyleSheet("font-size: 13px; color: #89b4fa;")
         outer.addWidget(self.job_link_lbl)
 
-        # Dates (only shown when values exist)
+        # Dates (only shown when values exist) - 13px, lighter color for readability
         self.date_applied_lbl = QLabel()
-        self.date_applied_lbl.setStyleSheet("font-size: 11px; color: #6c7086;")
+        self.date_applied_lbl.setStyleSheet("font-size: 13px; color: #a6adc8;")
         outer.addWidget(self.date_applied_lbl)
 
         self.date_last_updated_lbl = QLabel()
-        self.date_last_updated_lbl.setStyleSheet("font-size: 11px; color: #6c7086;")
+        self.date_last_updated_lbl.setStyleSheet("font-size: 13px; color: #a6adc8;")
         outer.addWidget(self.date_last_updated_lbl)
 
         self.date_created_lbl = QLabel()
-        self.date_created_lbl.setStyleSheet("font-size: 11px; color: #6c7086;")
+        self.date_created_lbl.setStyleSheet("font-size: 13px; color: #a6adc8;")
         outer.addWidget(self.date_created_lbl)
 
-        outer.addSpacing(8)
+        outer.addSpacing(12)
 
-        # Referrals section
+        # Referrals section - 15px title
         self.referrals_title_lbl = QLabel("Referrals")
         self.referrals_title_lbl.setStyleSheet(
-            "font-size: 12px; font-weight: bold; color: #a6adc8; margin-top: 8px;"
+            "font-size: 15px; font-weight: bold; color: #a6adc8; margin-top: 12px;"
         )
         outer.addWidget(self.referrals_title_lbl)
 
-        self.referrals_container = QWidget()
-        referrals_layout = QVBoxLayout(self.referrals_container)
-        referrals_layout.setContentsMargins(0, 0, 0, 0)
-        referrals_layout.setSpacing(4)
-
-        self.referrals_list = QWidget()
-        self._referrals_layout = QVBoxLayout(self.referrals_list)
+        # Referrals list directly in sidebar (no container wrapper)
+        self._referrals_layout_widget = QWidget()
+        self._referrals_layout = QVBoxLayout(self._referrals_layout_widget)
         self._referrals_layout.setContentsMargins(0, 0, 0, 0)
-        self._referrals_layout.setSpacing(0)
+        self._referrals_layout.setSpacing(4)
         self._referrals_layout.addStretch()
-        referrals_layout.addWidget(self.referrals_list)
+        outer.addWidget(self._referrals_layout_widget)
 
+        # Add button - 13px font
         add_ref_btn = QPushButton("+ Add")
         add_ref_btn.setStyleSheet("""
             QPushButton {
@@ -405,8 +402,8 @@ class _DetailsPanel(QWidget):
                 color: #89b4fa;
                 border: 1px solid #45475a;
                 border-radius: 4px;
-                padding: 4px 12px;
-                font-size: 11px;
+                padding: 6px 16px;
+                font-size: 13px;
                 margin-top: 8px;
             }
             QPushButton:hover {
@@ -414,9 +411,7 @@ class _DetailsPanel(QWidget):
             }
         """)
         add_ref_btn.clicked.connect(self._on_add_referral)
-        referrals_layout.addWidget(add_ref_btn)
-
-        outer.addWidget(self.referrals_container)
+        outer.addWidget(add_ref_btn)
 
         outer.addStretch()
 
@@ -440,14 +435,14 @@ class _DetailsPanel(QWidget):
         left_layout.setSpacing(2)
         left_widget.setStyleSheet("background: transparent; border: none;")
 
-        # Name (bold)
+        # Name (bold) - 14px
         name_lbl = QLabel(referral.get("name", "Unnamed"))
         name_lbl.setStyleSheet(
-            "font-weight: bold; color: #cdd6f4; font-size: 12px; background: transparent; border: none;"
+            "font-weight: bold; color: #cdd6f4; font-size: 14px; background: transparent; border: none;"
         )
         left_layout.addWidget(name_lbl)
 
-        # Contact info (if available)
+        # Contact info (if available) - 13px
         contact_text = ""
         if referral.get("phone"):
             contact_text = referral["phone"]
@@ -459,7 +454,7 @@ class _DetailsPanel(QWidget):
         if contact_text:
             contact_lbl = QLabel(contact_text)
             contact_lbl.setStyleSheet(
-                "color: #a6adc8; font-size: 11px; background: transparent; border: none;"
+                "color: #a6adc8; font-size: 13px; background: transparent; border: none;"
             )
             left_layout.addWidget(contact_lbl)
 
@@ -472,16 +467,16 @@ class _DetailsPanel(QWidget):
         btn_layout.setSpacing(4)
         btn_widget.setStyleSheet("background: transparent; border: none;")
 
-        # Small edit button
+        # Edit button - 14px
         edit_btn = QPushButton("✎")
         edit_btn.setToolTip("Edit")
-        edit_btn.setFixedSize(24, 24)
+        edit_btn.setFixedSize(28, 28)
         edit_btn.setStyleSheet("""
             QPushButton {
                 background: transparent;
                 color: #a6adc8;
                 border: none;
-                font-size: 12px;
+                font-size: 14px;
             }
             QPushButton:hover {
                 color: #cdd6f4;
@@ -489,16 +484,16 @@ class _DetailsPanel(QWidget):
         """)
         edit_btn.clicked.connect(lambda: self._on_edit_referral(referral))
 
-        # Small delete button
+        # Delete button - 16px
         del_btn = QPushButton("×")
         del_btn.setToolTip("Delete")
-        del_btn.setFixedSize(24, 24)
+        del_btn.setFixedSize(28, 28)
         del_btn.setStyleSheet("""
             QPushButton {
                 background: transparent;
                 color: #f38ba8;
                 border: none;
-                font-size: 14px;
+                font-size: 16px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -829,33 +824,17 @@ class ApplicationsView(QWidget):
         if new_status_key == "applied":
             # Get current application to check if date_applied already exists
             current_app = self.db.get_application(app_id)
-            if current_app and current_app.get("date_applied"):
-                # Show warning dialog
-                reply = QMessageBox.warning(
-                    self,
-                    "Update Application Date",
-                    f"This application already has an application date of {current_app['date_applied']}.\n\n"
-                    f"Do you want to overwrite it with today's date ({today})?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    # Update status, date_applied, and date_last_updated
-                    self.db.execute(
-                        "UPDATE job_application SET status_id=?, date_applied=?, date_last_updated=? WHERE id=?",
-                        (new_status_id, today, today, app_id),
-                    )
-                else:
-                    # Only update status and date_last_updated, keep existing date_applied
-                    self.db.execute(
-                        "UPDATE job_application SET status_id=?, date_last_updated=? WHERE id=?",
-                        (new_status_id, today, app_id),
-                    )
-            else:
-                # No existing date_applied, set status, date_applied, and date_last_updated
+            if current_app and not current_app.get("date_applied"):
+                # No existing date_applied, set it now along with last_updated
                 self.db.execute(
                     "UPDATE job_application SET status_id=?, date_applied=?, date_last_updated=? WHERE id=?",
                     (new_status_id, today, today, app_id),
+                )
+            else:
+                # date_applied already exists - leave it as-is, only update status and date_last_updated
+                self.db.execute(
+                    "UPDATE job_application SET status_id=?, date_last_updated=? WHERE id=?",
+                    (new_status_id, today, app_id),
                 )
         else:
             # Not moving to "applied", update status and date_last_updated only
