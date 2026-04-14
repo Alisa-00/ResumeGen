@@ -24,6 +24,11 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QLineEdit,
     QGridLayout,
+    QDialog,
+    QFormLayout,
+    QDialogButtonBox,
+    QPushButton,
+    QMenu,
 )
 
 from db.database import Database
@@ -97,9 +102,19 @@ class _AppCard(QListWidgetItem):
         self._app_data = app  # store full app data for sidebar
         company = app.get("company_name", "")
         position = app.get("position_name", "")
-        date = app.get("date_applied", "") or ""
-        date_lbl = f"Updated: {date}" if date else "Updated: —"
-        self.setText(f"{company}\n{position}\n{date_lbl}")
+
+        # Show creation date and applied date
+        date_created = app.get("date_created", "") or ""
+        date_applied = app.get("date_applied", "") or ""
+
+        if date_created:
+            date_str = f"Created: {date_created}"
+            if date_applied:
+                date_str += f" | Applied: {date_applied}"
+        else:
+            date_str = "No dates"
+
+        self.setText(f"{company}\n{position}\n{date_str}")
         self.setData(Qt.ItemDataRole.UserRole, app["id"])
         self.setSizeHint(QSize(0, 110))
 
@@ -199,12 +214,89 @@ class _ColumnList(QListWidget):
             super().dropEvent(event)
 
 
+# ── referral dialog ─────────────────────────────────────────────────────
+
+
+class _ReferralDialog(QDialog):
+    def __init__(
+        self,
+        parent=None,
+        name: str = "",
+        email: str = "",
+        phone: str = "",
+        linkedin_url: str = "",
+        description: str = "",
+        title: str = "Add Referral",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(350)
+        self._build_ui(name, email, phone, linkedin_url, description)
+
+    def _build_ui(
+        self, name: str, email: str, phone: str, linkedin_url: str, description: str
+    ):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+
+        self.name_edit = QLineEdit(name)
+        self.name_edit.setPlaceholderText("Referral name")
+        form.addRow("Name:*", self.name_edit)
+
+        self.email_edit = QLineEdit(email)
+        self.email_edit.setPlaceholderText("email@example.com")
+        form.addRow("Email:", self.email_edit)
+
+        self.phone_edit = QLineEdit(phone)
+        self.phone_edit.setPlaceholderText("+1 (555) 123-4567")
+        form.addRow("Phone:", self.phone_edit)
+
+        self.linkedin_edit = QLineEdit(linkedin_url)
+        self.linkedin_edit.setPlaceholderText("https://linkedin.com/in/...")
+        form.addRow("LinkedIn:", self.linkedin_edit)
+
+        self.desc_edit = QTextEdit(description)
+        self.desc_edit.setPlaceholderText("How you know this person, context, notes...")
+        self.desc_edit.setMinimumHeight(80)
+        form.addRow("Description:", self.desc_edit)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_save(self):
+        if not self.name_edit.text().strip():
+            QMessageBox.warning(self, "Required", "Name is required.")
+            return
+        self.accept()
+
+    def get_data(self) -> dict:
+        return {
+            "name": self.name_edit.text().strip(),
+            "email": self.email_edit.text().strip() or None,
+            "phone": self.phone_edit.text().strip() or None,
+            "linkedin_url": self.linkedin_edit.text().strip() or None,
+            "description": self.desc_edit.toPlainText().strip() or None,
+        }
+
+
 # ── sidebar panel ──────────────────────────────────────────────────────
 
 
 class _DetailsPanel(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, db: Database, parent=None):
         super().__init__(parent)
+        self.db = db
+        self._app_id: int | None = None
         self.setMinimumWidth(280)
         self.setMaximumWidth(360)
         self.setStyleSheet("""
@@ -256,6 +348,50 @@ class _DetailsPanel(QWidget):
         grid.addWidget(self.profile_lbl, 3, 1)
 
         outer.addLayout(grid)
+
+        # Dates section
+        outer.addWidget(self._label("Dates:"))
+        self.date_created_lbl = QLabel("Created: —")
+        self.date_created_lbl.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        outer.addWidget(self.date_created_lbl)
+        self.date_applied_lbl = QLabel("Applied: —")
+        self.date_applied_lbl.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        outer.addWidget(self.date_applied_lbl)
+
+        # Referrals section (moved up)
+        outer.addWidget(self._label("Referrals:"))
+        self.referrals_container = QWidget()
+        referrals_layout = QVBoxLayout(self.referrals_container)
+        referrals_layout.setContentsMargins(0, 0, 0, 0)
+        referrals_layout.setSpacing(8)
+
+        self.referrals_list = QWidget()
+        self._referrals_layout = QVBoxLayout(self.referrals_list)
+        self._referrals_layout.setContentsMargins(0, 0, 0, 0)
+        self._referrals_layout.setSpacing(6)
+        self._referrals_layout.addStretch()
+        referrals_layout.addWidget(self.referrals_list)
+
+        add_ref_btn = QPushButton("+ Add")
+        add_ref_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #89b4fa;
+                border: 1px solid #45475a;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: #313244;
+            }
+        """)
+        add_ref_btn.clicked.connect(self._on_add_referral)
+        referrals_layout.addWidget(add_ref_btn)
+
+        outer.addWidget(self.referrals_container)
+
+        # Job URL (moved below referrals)
         outer.addWidget(self._label("Job URL:"))
         self.url_edit = QLineEdit()
         self.url_edit.setReadOnly(True)
@@ -270,25 +406,6 @@ class _DetailsPanel(QWidget):
         """)
         outer.addWidget(self.url_edit)
 
-        outer.addWidget(self._label("Job Description:"))
-        self.desc_edit = QTextEdit()
-        self.desc_edit.setReadOnly(True)
-        self.desc_edit.setMinimumHeight(120)
-        self.desc_edit.setStyleSheet("""
-            QTextEdit {
-                background: #181825;
-                border: 1px solid #313244;
-                border-radius: 4px;
-                padding: 8px;
-                color: #cdd6f4;
-            }
-        """)
-        outer.addWidget(self.desc_edit, 1)
-
-        self.last_updated_lbl = QLabel("")
-        self.last_updated_lbl.setStyleSheet("color: #585b70; font-size: 11px;")
-        outer.addWidget(self.last_updated_lbl)
-
         outer.addStretch()
 
     def _label(self, text: str) -> QLabel:
@@ -296,26 +413,178 @@ class _DetailsPanel(QWidget):
         lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-weight: bold;")
         return lbl
 
+    def _create_referral_widget(self, referral: dict) -> QWidget:
+        """Create a compact single-line referral widget with edit/delete buttons."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(8)
+        widget.setStyleSheet("background: transparent; border: none;")
+
+        # Build the contact text (pick the first available: phone, email, or linkedin)
+        contact_text = ""
+        if referral.get("phone"):
+            contact_text = referral["phone"]
+        elif referral.get("email"):
+            contact_text = referral["email"]
+        elif referral.get("linkedin_url"):
+            contact_text = "LinkedIn"
+
+        # Main label: "Name - contact"
+        if contact_text:
+            main_text = f"{referral.get('name', 'Unnamed')} - {contact_text}"
+        else:
+            main_text = referral.get("name", "Unnamed")
+
+        main_lbl = QLabel(main_text)
+        main_lbl.setStyleSheet(
+            "color: #cdd6f4; font-size: 12px; background: transparent; border: none;"
+        )
+        main_lbl.setWordWrap(False)
+        layout.addWidget(main_lbl, 1)
+
+        # Small edit button
+        edit_btn = QPushButton("✎")
+        edit_btn.setToolTip("Edit")
+        edit_btn.setFixedSize(24, 24)
+        edit_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #a6adc8;
+                border: none;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                color: #cdd6f4;
+            }
+        """)
+        edit_btn.clicked.connect(lambda: self._on_edit_referral(referral))
+
+        # Small delete button
+        del_btn = QPushButton("×")
+        del_btn.setToolTip("Delete")
+        del_btn.setFixedSize(24, 24)
+        del_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #f38ba8;
+                border: none;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                color: #eba0ac;
+            }
+        """)
+        del_btn.clicked.connect(lambda: self._on_delete_referral(referral))
+
+        layout.addWidget(edit_btn)
+        layout.addWidget(del_btn)
+
+        return widget
+
+    def _load_referrals(self):
+        # Clear existing referrals
+        while self._referrals_layout.count() > 1:
+            item = self._referrals_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if self._app_id is None:
+            return
+
+        referrals = self.db.get_application_referrals(self._app_id)
+        for referral in referrals:
+            widget = self._create_referral_widget(referral)
+            self._referrals_layout.insertWidget(
+                self._referrals_layout.count() - 1, widget
+            )
+
+    def _on_add_referral(self):
+        if self._app_id is None:
+            return
+
+        dialog = _ReferralDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            self.db.add_application_referral(
+                application_id=self._app_id,
+                name=data["name"],
+                email=data["email"],
+                phone=data["phone"],
+                linkedin_url=data["linkedin_url"],
+                description=data["description"],
+            )
+            self._load_referrals()
+
+    def _on_edit_referral(self, referral: dict):
+        dialog = _ReferralDialog(
+            self,
+            name=referral.get("name", ""),
+            email=referral.get("email", ""),
+            phone=referral.get("phone", ""),
+            linkedin_url=referral.get("linkedin_url", ""),
+            description=referral.get("description", ""),
+            title="Edit Referral",
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            self.db.update_application_referral(
+                referral_id=referral["id"],
+                name=data["name"],
+                email=data["email"],
+                phone=data["phone"],
+                linkedin_url=data["linkedin_url"],
+                description=data["description"],
+            )
+            self._load_referrals()
+
+    def _on_delete_referral(self, referral: dict):
+        if (
+            QMessageBox.question(
+                self,
+                "Delete Referral",
+                f"Delete referral for '{referral.get('name', 'Unnamed')}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
+            self.db.delete_application_referral(referral["id"])
+            self._load_referrals()
+
     def set_application(self, app: dict):
+        self._app_id = app.get("id")
         self.title_lbl.setText(f"Application #{app.get('id', '')}")
         self.company_lbl.setText(app.get("company_name", "—") or "—")
         self.position_lbl.setText(app.get("position_name", "—") or "—")
         self.status_lbl.setText(app.get("status", "—") or "—")
         self.profile_lbl.setText(app.get("profile_name", "—") or "—")
         self.url_edit.setText(app.get("job_posting_url", "") or "")
-        self.desc_edit.setPlainText(app.get("job_posting_description", "") or "")
-        date = app.get("date_applied", "") or "—"
-        self.last_updated_lbl.setText(f"Last updated: {date}")
+
+        date_created = app.get("date_created", "") or "—"
+        self.date_created_lbl.setText(f"Created: {date_created}")
+
+        date_applied = app.get("date_applied", "") or "Not yet applied"
+        self.date_applied_lbl.setText(f"Applied: {date_applied}")
+
+        self._load_referrals()
 
     def clear(self):
+        self._app_id = None
         self.title_lbl.setText("Select an application")
         self.company_lbl.setText("—")
         self.position_lbl.setText("—")
         self.status_lbl.setText("—")
         self.profile_lbl.setText("—")
         self.url_edit.setText("")
-        self.desc_edit.setPlainText("")
-        self.last_updated_lbl.setText("")
+        self.date_created_lbl.setText("Created: —")
+        self.date_applied_lbl.setText("Applied: —")
+
+        # Clear referrals
+        while self._referrals_layout.count() > 1:
+            item = self._referrals_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
 
 # ── applications view ─────────────────────────────────────────────────
@@ -333,7 +602,8 @@ class ApplicationsView(QWidget):
         self._drag_state: dict = {"source": None, "app_id": None}
         self._headers: dict[str, QLabel] = {}
         self._title_lbl: QLabel | None = None
-        self._details_panel = _DetailsPanel()
+        self._details_panel = _DetailsPanel(db)
+        self._details_panel.setVisible(False)  # Hide by default until selection
         self._build_ui()
         self.refresh()
 
@@ -452,6 +722,7 @@ class ApplicationsView(QWidget):
 
     def _on_card_clicked(self, app: dict):
         self._details_panel.set_application(app)
+        self._details_panel.setVisible(True)
 
     def _selected_app_id(self) -> int | None:
         if self._selected_list:
@@ -481,11 +752,47 @@ class ApplicationsView(QWidget):
         today = _date.today().strftime("%Y-%m-%d")
         statuses = {s["status"]: s["id"] for s in self.db.get_statuses()}
         new_status_id = statuses.get(new_status_key)
-        if new_status_id:
+        if not new_status_id:
+            return
+
+        # Check if dropping to "applied" column
+        if new_status_key == "applied":
+            # Get current application to check if date_applied already exists
+            current_app = self.db.get_application(app_id)
+            if current_app and current_app.get("date_applied"):
+                # Show warning dialog
+                reply = QMessageBox.warning(
+                    self,
+                    "Update Application Date",
+                    f"This application already has an application date of {current_app['date_applied']}.\n\n"
+                    f"Do you want to overwrite it with today's date ({today})?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.db.execute(
+                        "UPDATE job_application SET status_id=?, date_applied=? WHERE id=?",
+                        (new_status_id, today, app_id),
+                    )
+                else:
+                    # Only update status, keep existing date_applied
+                    self.db.execute(
+                        "UPDATE job_application SET status_id=? WHERE id=?",
+                        (new_status_id, app_id),
+                    )
+            else:
+                # No existing date_applied, set both status and date
+                self.db.execute(
+                    "UPDATE job_application SET status_id=?, date_applied=? WHERE id=?",
+                    (new_status_id, today, app_id),
+                )
+        else:
+            # Not moving to "applied", only update status
             self.db.execute(
-                "UPDATE job_application SET status_id=?, date_applied=? WHERE id=?",
-                (new_status_id, today, app_id),
+                "UPDATE job_application SET status_id=? WHERE id=?",
+                (new_status_id, app_id),
             )
+
         self.refresh()
 
     def _on_card_opened(self, app_id: int):
@@ -517,4 +824,6 @@ class ApplicationsView(QWidget):
             == QMessageBox.StandardButton.Yes
         ):
             self.db.delete_application(app_id)
+            self._details_panel.setVisible(False)
+            self._details_panel.clear()
             self.refresh()
