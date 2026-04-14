@@ -416,17 +416,15 @@ class _DetailsPanel(QWidget):
 
         outer.addSpacing(12)
 
-        # Referrals section - 15px title
+        # Referrals section - 20px title (matches company name size)
         self.referrals_title_lbl = QLabel("Referrals")
         self.referrals_title_lbl.setStyleSheet(
-            "font-size: 15px; font-weight: bold; color: #a6adc8; margin-top: 12px;"
+            "font-size: 20px; font-weight: bold; color: #a6adc8; margin-top: 12px;"
         )
         outer.addWidget(self.referrals_title_lbl)
 
-        # Referrals list - simple labels directly in sidebar (no containers)
-        # We store a spacer item to keep the Add button at the bottom
-        self._referral_labels: list[tuple[QLabel, int]] = []  # (label, referral_id)
-        self._referral_spacer = None  # Will be inserted after the last referral label
+        # Referrals list - widgets directly in sidebar (name + contact labels)
+        self._referral_labels: list[tuple[QWidget, int]] = []  # (widget, referral_id)
 
         # Add button - 13px font
         add_ref_btn = QPushButton("+ Add")
@@ -454,63 +452,87 @@ class _DetailsPanel(QWidget):
         lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-weight: bold;")
         return lbl
 
-    def _create_referral_label(self, referral: dict) -> tuple[QLabel, int]:
-        """Create a simple referral label with name and contact info.
-        Returns (label, referral_id) tuple."""
-        # Build contact text
+    def _create_referral_widget(self, referral: dict) -> tuple[QWidget, int]:
+        """Create a referral widget with separate name and contact labels.
+        Name is clickable for edit, contact is selectable for copying.
+        Returns (widget, referral_id) tuple."""
+        # Create horizontal layout widget
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(8)
+        widget.setStyleSheet("background: transparent; border: none;")
+
+        # Name label - 18px, bold, clickable (opens edit dialog)
+        name_lbl = QLabel(referral.get("name", "Unnamed"))
+        name_lbl.setStyleSheet("""
+            font-weight: bold;
+            color: #cdd6f4;
+            font-size: 18px;
+            background: transparent;
+            border: none;
+        """)
+        name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        name_lbl.setProperty("referral_data", referral)
+        name_lbl.mouseReleaseEvent = lambda event, lbl=name_lbl: (
+            self._on_referral_name_clicked(event, lbl)
+        )
+        layout.addWidget(name_lbl)
+
+        # Contact label - 15px, selectable, LinkedIn as hyperlink
         contact_text = ""
+        is_linkedin = False
+        linkedin_url = ""
         if referral.get("phone"):
             contact_text = referral["phone"]
         elif referral.get("email"):
             contact_text = referral["email"]
         elif referral.get("linkedin_url"):
             contact_text = "LinkedIn profile"
+            is_linkedin = True
+            linkedin_url = referral["linkedin_url"]
 
-        # Build the label text with HTML formatting
         if contact_text:
-            text = f"<b>{referral.get('name', 'Unnamed')}</b><br/><span style='color: #a6adc8;'>{contact_text}</span>"
-        else:
-            text = f"<b>{referral.get('name', 'Unnamed')}</b>"
-
-        # Create the label
-        label = QLabel(text)
-        label.setWordWrap(True)
-        label.setStyleSheet("""
-            QLabel {
-                color: #cdd6f4;
-                font-size: 14px;
+            contact_lbl = QLabel()
+            if is_linkedin and linkedin_url:
+                # Create hyperlink for LinkedIn
+                contact_lbl.setText(
+                    f'<a href="{linkedin_url}" style="color: #89b4fa; text-decoration: underline;">LinkedIn profile</a>'
+                )
+                contact_lbl.setOpenExternalLinks(True)
+                contact_lbl.setTextFormat(Qt.TextFormat.RichText)
+            else:
+                # Plain text for phone/email, selectable
+                contact_lbl.setText(contact_text)
+                contact_lbl.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextSelectableByMouse
+                )
+            contact_lbl.setStyleSheet("""
+                color: #a6adc8;
+                font-size: 15px;
                 background: transparent;
                 border: none;
-                padding: 4px 0px;
-            }
-        """)
-        label.setTextFormat(Qt.TextFormat.RichText)
+            """)
+            layout.addWidget(contact_lbl)
 
-        # Store the referral_id as a property for click handling
-        label.setProperty("referral_id", referral["id"])
-        label.setProperty("referral_data", referral)
-        label.setCursor(Qt.CursorShape.PointingHandCursor)
-        label.mousePressEvent = lambda event, lbl=label: self._on_referral_clicked(lbl)
+        layout.addStretch()
 
-        return (label, referral["id"])
+        # Store referral data on the widget
+        widget.setProperty("referral_data", referral)
+        return (widget, referral["id"])
 
-    def _on_referral_clicked(self, label: QLabel):
-        """Handle click on a referral label to edit it."""
-        referral = label.property("referral_data")
-        if referral:
-            self._on_edit_referral(referral)
+    def _on_referral_name_clicked(self, event, label: QLabel):
+        """Handle click on referral name to open edit dialog."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            referral = label.property("referral_data")
+            if referral:
+                self._on_edit_referral(referral)
 
     def _load_referrals(self):
-        # Clear existing referral labels from the sidebar
-        for label, ref_id in self._referral_labels:
-            label.deleteLater()
+        # Clear existing referral widgets from the sidebar
+        for widget, ref_id in self._referral_labels:
+            widget.deleteLater()
         self._referral_labels.clear()
-
-        # Remove and re-add the spacer if needed
-        if self._referral_spacer is not None:
-            # The spacer was added to the layout, we need to find it and remove it
-            # Actually, let's just rebuild the layout structure
-            pass
 
         if self._app_id is None:
             return
@@ -538,10 +560,10 @@ class _DetailsPanel(QWidget):
 
         referrals = self.db.get_application_referrals(self._app_id)
         for i, referral in enumerate(referrals):
-            label, ref_id = self._create_referral_label(referral)
-            self._referral_labels.append((label, ref_id))
-            # Insert the label into the sidebar layout
-            outer.insertWidget(insert_index + i, label)
+            widget, ref_id = self._create_referral_widget(referral)
+            self._referral_labels.append((widget, ref_id))
+            # Insert the widget into the sidebar layout
+            outer.insertWidget(insert_index + i, widget)
 
     def _on_add_referral(self):
         if self._app_id is None:
@@ -657,8 +679,8 @@ class _DetailsPanel(QWidget):
         self.date_created_lbl.setVisible(False)
 
         # Clear referrals
-        for label, ref_id in self._referral_labels:
-            label.deleteLater()
+        for widget, ref_id in self._referral_labels:
+            widget.deleteLater()
         self._referral_labels.clear()
 
 
