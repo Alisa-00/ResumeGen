@@ -588,7 +588,7 @@ class _DetailsPanel(QWidget):
         self.title_lbl.setText(f"Application #{app.get('id', '')}")
 
         # Company (bold, hide if empty)
-        company = app.get("company_name", "").strip()
+        company = (app.get("company_name") or "").strip()
         if company:
             self.company_lbl.setText(company)
             self.company_lbl.setVisible(True)
@@ -596,7 +596,7 @@ class _DetailsPanel(QWidget):
             self.company_lbl.setVisible(False)
 
         # Position (hide if empty)
-        position = app.get("position_name", "").strip()
+        position = (app.get("position_name") or "").strip()
         if position:
             self.position_lbl.setText(position)
             self.position_lbl.setVisible(True)
@@ -604,7 +604,7 @@ class _DetailsPanel(QWidget):
             self.position_lbl.setVisible(False)
 
         # Job posting hyperlink (hide if no URL)
-        url = app.get("job_posting_url", "").strip()
+        url = (app.get("job_posting_url") or "").strip()
         if url:
             # Create clickable hyperlink
             display_url = url if len(url) < 50 else url[:47] + "..."
@@ -616,7 +616,7 @@ class _DetailsPanel(QWidget):
             self.job_link_lbl.setVisible(False)
 
         # Applied date (hide if empty)
-        date_applied = app.get("date_applied", "").strip()
+        date_applied = (app.get("date_applied") or "").strip()
         if date_applied:
             self.date_applied_lbl.setText(f"Applied in: {date_applied}")
             self.date_applied_lbl.setVisible(True)
@@ -624,7 +624,7 @@ class _DetailsPanel(QWidget):
             self.date_applied_lbl.setVisible(False)
 
         # Created date (hide if empty)
-        date_created = app.get("date_created", "").strip()
+        date_created = (app.get("date_created") or "").strip()
         if date_created:
             self.date_created_lbl.setText(f"Created: {date_created}")
             self.date_created_lbl.setVisible(True)
