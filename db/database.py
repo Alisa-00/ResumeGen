@@ -106,10 +106,10 @@ CREATE TABLE IF NOT EXISTS resume_template (
     name                      TEXT    NOT NULL,
     font_family               TEXT    NOT NULL DEFAULT 'Arial',
     font_size                 REAL    NOT NULL DEFAULT 11.0,
-    margin_top                REAL    NOT NULL DEFAULT 15.0,
-    margin_bottom             REAL    NOT NULL DEFAULT 15.0,
-    margin_left               REAL    NOT NULL DEFAULT 15.0,
-    margin_right              REAL    NOT NULL DEFAULT 15.0,
+    margin_top                REAL    NOT NULL DEFAULT 8.0,
+    margin_bottom             REAL    NOT NULL DEFAULT 8.0,
+    margin_left               REAL    NOT NULL DEFAULT 8.0,
+    margin_right              REAL    NOT NULL DEFAULT 8.0,
     min_bullet_points_per_job INTEGER NOT NULL DEFAULT 2,
     max_bullet_points_per_job INTEGER NOT NULL DEFAULT 5
 );

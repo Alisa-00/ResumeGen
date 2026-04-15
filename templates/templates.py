@@ -103,9 +103,9 @@ def build_context(
         "sections_enabled": {k: bool(v) for k, v in sections_enabled.items()},
         "font_family": (template_settings or {}).get("font_family", "Arial"),
         "font_size": (template_settings or {}).get("font_size", 11.0),
-        "margin_top": (template_settings or {}).get("margin_top", 15.0),
-        "margin_bottom": (template_settings or {}).get("margin_bottom", 15.0),
-        "margin_left": (template_settings or {}).get("margin_left", 15.0),
-        "margin_right": (template_settings or {}).get("margin_right", 15.0),
+        "margin_top": (template_settings or {}).get("margin_top", 8.0),
+        "margin_bottom": (template_settings or {}).get("margin_bottom", 8.0),
+        "margin_left": (template_settings or {}).get("margin_left", 8.0),
+        "margin_right": (template_settings or {}).get("margin_right", 8.0),
         "date_format": date_format,
     }

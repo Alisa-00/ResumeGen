@@ -1,26 +1,48 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QLabel, QMessageBox, QDoubleSpinBox, QSpinBox,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QPushButton,
+    QLabel,
+    QMessageBox,
+    QDoubleSpinBox,
+    QSpinBox,
     QComboBox,
 )
 
 from db.database import Database
 from ui.widgets import (
-    section_title, hline, primary_btn, flat_link_btn,
-    field, scrollable, Card,
+    section_title,
+    hline,
+    primary_btn,
+    flat_link_btn,
+    field,
+    scrollable,
+    Card,
 )
 
 FONT_OPTIONS = [
-    "Arial", "Helvetica", "Georgia", "Times New Roman",
-    "Calibri", "Garamond", "Palatino", "Verdana",
-    "DejaVu Serif", "DejaVu Sans", "Liberation Serif", "Liberation Sans",
+    "Arial",
+    "Helvetica",
+    "Georgia",
+    "Times New Roman",
+    "Calibri",
+    "Garamond",
+    "Palatino",
+    "Verdana",
+    "DejaVu Serif",
+    "DejaVu Sans",
+    "Liberation Serif",
+    "Liberation Sans",
 ]
 
 
-def _spinbox(min_: float, max_: float, step: float,
-             value: float, decimals: int = 1) -> QDoubleSpinBox:
+def _spinbox(
+    min_: float, max_: float, step: float, value: float, decimals: int = 1
+) -> QDoubleSpinBox:
     sb = QDoubleSpinBox()
     sb.setRange(min_, max_)
     sb.setSingleStep(step)
@@ -60,13 +82,13 @@ class TemplatesView(QWidget):
         layout.addWidget(hline())
 
         self._cards_container = QWidget()
-        self._cards_layout    = QVBoxLayout(self._cards_container)
+        self._cards_layout = QVBoxLayout(self._cards_container)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
         self._cards_layout.setSpacing(10)
         layout.addWidget(self._cards_container)
 
         btn_row = QHBoxLayout()
-        add_btn  = flat_link_btn("+ Add Template")
+        add_btn = flat_link_btn("+ Add Template")
         add_btn.clicked.connect(lambda: self._add_card())
         save_btn = primary_btn("Save All")
         save_btn.clicked.connect(self._save_all)
@@ -107,32 +129,37 @@ class TemplatesView(QWidget):
         f_font.setCurrentIndex(idx if idx >= 0 else 0)
         f_font.setFixedWidth(200)
 
-        f_font_size    = _spinbox(6, 24, 0.5,  d.get("font_size",     11.0))
-        f_margin_top   = _spinbox(0, 60, 1.0,  d.get("margin_top",    15.0))
-        f_margin_bot   = _spinbox(0, 60, 1.0,  d.get("margin_bottom", 15.0))
-        f_margin_left  = _spinbox(0, 60, 1.0,  d.get("margin_left",   15.0))
-        f_margin_right = _spinbox(0, 60, 1.0,  d.get("margin_right",  15.0))
-        f_min_bp       = _intbox(0, 20,         d.get("min_bullet_points_per_job", 2))
-        f_max_bp       = _intbox(0, 20,         d.get("max_bullet_points_per_job", 5))
+        f_font_size = _spinbox(6, 24, 0.5, d.get("font_size", 11.0))
+        f_margin_top = _spinbox(0, 60, 1.0, d.get("margin_top", 8.0))
+        f_margin_bot = _spinbox(0, 60, 1.0, d.get("margin_bottom", 8.0))
+        f_margin_left = _spinbox(0, 60, 1.0, d.get("margin_left", 8.0))
+        f_margin_right = _spinbox(0, 60, 1.0, d.get("margin_right", 8.0))
+        f_min_bp = _intbox(0, 20, d.get("min_bullet_points_per_job", 2))
+        f_max_bp = _intbox(0, 20, d.get("max_bullet_points_per_job", 5))
 
         for lbl, w in [
-            ("Name",              f_name),
-            ("Font family",       f_font),
-            ("Font size (pt)",    f_font_size),
-            ("Margin top (mm)",   f_margin_top),
-            ("Margin bottom (mm)",f_margin_bot),
-            ("Margin left (mm)",  f_margin_left),
+            ("Name", f_name),
+            ("Font family", f_font),
+            ("Font size (pt)", f_font_size),
+            ("Margin top (mm)", f_margin_top),
+            ("Margin bottom (mm)", f_margin_bot),
+            ("Margin left (mm)", f_margin_left),
             ("Margin right (mm)", f_margin_right),
-            ("Min bullets/job",   f_min_bp),
-            ("Max bullets/job",   f_max_bp),
+            ("Min bullets/job", f_min_bp),
+            ("Max bullets/job", f_max_bp),
         ]:
             form.addRow(lbl, w)
 
         card._fields = dict(
-            name=f_name, font=f_font, font_size=f_font_size,
-            mt=f_margin_top, mb=f_margin_bot,
-            ml=f_margin_left, mr=f_margin_right,
-            min_bp=f_min_bp, max_bp=f_max_bp,
+            name=f_name,
+            font=f_font,
+            font_size=f_font_size,
+            mt=f_margin_top,
+            mb=f_margin_bot,
+            ml=f_margin_left,
+            mr=f_margin_right,
+            min_bp=f_min_bp,
+            max_bp=f_max_bp,
         )
         card._data = data
         card.add_form(form)
@@ -151,26 +178,27 @@ class TemplatesView(QWidget):
 
     def _save_all(self):
         for card, _ in self._cards:
-            f      = card._fields
+            f = card._fields
             min_bp = f["min_bp"].value()
             max_bp = f["max_bp"].value()
             if min_bp > max_bp:
                 QMessageBox.warning(
-                    self, "Invalid",
-                    f"Min bullets ({min_bp}) cannot exceed max ({max_bp})."
+                    self,
+                    "Invalid",
+                    f"Min bullets ({min_bp}) cannot exceed max ({max_bp}).",
                 )
                 return
             new_id = self.db.upsert_template(
-                name        = f["name"].text().strip() or "Untitled",
-                font_family = f["font"].currentText(),
-                font_size   = f["font_size"].value(),
-                margin_top  = f["mt"].value(),
-                margin_bottom = f["mb"].value(),
-                margin_left = f["ml"].value(),
-                margin_right = f["mr"].value(),
-                min_bp      = min_bp,
-                max_bp      = max_bp,
-                id          = (card._data or {}).get("id"),
+                name=f["name"].text().strip() or "Untitled",
+                font_family=f["font"].currentText(),
+                font_size=f["font_size"].value(),
+                margin_top=f["mt"].value(),
+                margin_bottom=f["mb"].value(),
+                margin_left=f["ml"].value(),
+                margin_right=f["mr"].value(),
+                min_bp=min_bp,
+                max_bp=max_bp,
+                id=(card._data or {}).get("id"),
             )
             card._data = {**(card._data or {}), "id": new_id}
         QMessageBox.information(self, "Saved", "Templates saved.")
@@ -181,8 +209,10 @@ def _default_template_data() -> dict:
         name="Default — Clean Minimal",
         font_family="Liberation Serif",
         font_size=11.0,
-        margin_top=15.0, margin_bottom=15.0,
-        margin_left=15.0, margin_right=15.0,
+        margin_top=8.0,
+        margin_bottom=8.0,
+        margin_left=8.0,
+        margin_right=8.0,
         min_bullet_points_per_job=2,
         max_bullet_points_per_job=5,
     )
