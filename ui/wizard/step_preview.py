@@ -617,11 +617,12 @@ class _ExperienceItem(_SubItem):
         meta_lbl.setStyleSheet("color: #a6adc8; font-size: 16px; font-weight: bold;")
         self._body_layout.addWidget(meta_lbl)
 
-        self._f_desc = QLineEdit(
-            eo.get("organization_description")
-            or job.get("organization_description")
-            or ""
-        )
+        # Check if key exists in override (even if empty string)
+        if "organization_description" in eo:
+            desc_val = eo["organization_description"]  # Use saved (even if empty)
+        else:
+            desc_val = job.get("organization_description") or ""  # First load only
+        self._f_desc = QLineEdit(desc_val)
         self._f_desc.setPlaceholderText("e.g. startup working on X")
         self._f_desc.setStyleSheet(
             "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
@@ -629,9 +630,12 @@ class _ExperienceItem(_SubItem):
         self._f_desc.textChanged.connect(self.changed)
         self._add_body_row("Description", self._f_desc)
 
-        self._f_url = QLineEdit(
-            eo.get("organization_website") or job.get("organization_website") or ""
-        )
+        # Check if key exists in override (even if empty string)
+        if "organization_website" in eo:
+            url_val = eo["organization_website"]  # Use saved (even if empty)
+        else:
+            url_val = job.get("organization_website") or ""  # First load only
+        self._f_url = QLineEdit(url_val)
         self._f_url.setPlaceholderText("https://company.com")
         self._f_url.setStyleSheet(
             "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
@@ -652,15 +656,12 @@ class _ExperienceItem(_SubItem):
 
     def get_overrides(self) -> tuple[dict[int, str], dict]:
         bullet_ovs = self._bullet_list.get_overrides()
-        meta = {}
-        desc = self._f_desc.text().strip()
-        url = self._f_url.text().strip()
-        base_desc = (self._original.get("organization_description") or "").strip()
-        base_url = (self._original.get("organization_website") or "").strip()
-        if desc != base_desc:
-            meta["organization_description"] = desc
-        if url != base_url:
-            meta["organization_website"] = url
+        # Always include org fields so they persist in application data
+        # This ensures application data is the single source of truth
+        meta = {
+            "organization_description": self._f_desc.text().strip(),
+            "organization_website": self._f_url.text().strip(),
+        }
         return bullet_ovs, meta
 
     def get_meta_override(self) -> dict:
