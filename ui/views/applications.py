@@ -5,6 +5,8 @@ Kanban board for job applications with counts and detail sidebar.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QDrag, QFont, QPainter, QColor
 from PySide6.QtWidgets import (
@@ -33,6 +35,18 @@ from PySide6.QtWidgets import (
 
 from db.database import Database
 from ui.widgets import primary_btn, danger_btn, section_title
+
+
+def _fmt_date(value: str | None) -> str:
+    """Format ISO date YYYY-MM-DD -> DD Mon YYYY."""
+    if not value:
+        return ""
+    try:
+        dt = datetime.strptime(value, "%Y-%m-%d")
+        return dt.strftime("%d %b %Y")
+    except ValueError:
+        return value
+
 
 COLUMNS: list[tuple[str, str]] = [
     ("to-apply", "To Apply"),
@@ -108,9 +122,9 @@ class _AppCard(QListWidgetItem):
         date_applied = app.get("date_applied", "") or ""
 
         if date_created:
-            date_str = f"Created: {date_created}"
+            date_str = f"Created: {_fmt_date(date_created)}"
             if date_applied:
-                date_str += f" | Applied: {date_applied}"
+                date_str += f" | Applied: {_fmt_date(date_applied)}"
         else:
             date_str = "No dates"
 
@@ -352,6 +366,67 @@ class _ReferralDialog(QDialog):
         return self._delete_requested
 
 
+class _ApplicationEditDialog(QDialog):
+    """Dialog to edit application company, position, and job URL."""
+
+    def __init__(
+        self,
+        parent=None,
+        company: str = "",
+        position: str = "",
+        job_url: str = "",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Application")
+        self.setMinimumWidth(400)
+        self._build_ui(company, position, job_url)
+
+    def _build_ui(self, company: str, position: str, job_url: str):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+
+        self.company_edit = QLineEdit(company)
+        self.company_edit.setPlaceholderText("Company name")
+        form.addRow("Company:*", self.company_edit)
+
+        self.position_edit = QLineEdit(position)
+        self.position_edit.setPlaceholderText("Position title")
+        form.addRow("Position:*", self.position_edit)
+
+        self.url_edit = QLineEdit(job_url)
+        self.url_edit.setPlaceholderText("https://...")
+        form.addRow("Job URL:", self.url_edit)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_save(self):
+        if not self.company_edit.text().strip():
+            QMessageBox.warning(self, "Required", "Company is required.")
+            return
+        if not self.position_edit.text().strip():
+            QMessageBox.warning(self, "Required", "Position is required.")
+            return
+        self.accept()
+
+    def get_data(self) -> dict:
+        return {
+            "company": self.company_edit.text().strip(),
+            "position": self.position_edit.text().strip(),
+            "job_url": self.url_edit.text().strip() or None,
+        }
+
+
 # ── sidebar panel ──────────────────────────────────────────────────────
 
 
@@ -380,18 +455,22 @@ class _DetailsPanel(QWidget):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
 
-        # Company name as main title (bold) - 20px
+        # Company name as main title (bold) - 20px, clickable
         self.company_lbl = QLabel("Select an application")
         self.company_lbl.setWordWrap(True)
         self.company_lbl.setStyleSheet(
             "font-size: 20px; font-weight: bold; color: #cdd6f4;"
         )
+        self.company_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.company_lbl.mouseReleaseEvent = self._on_company_clicked
         outer.addWidget(self.company_lbl)
 
-        # Position name as subtitle - 15px
+        # Position name as subtitle - 15px, clickable
         self.position_lbl = QLabel()
         self.position_lbl.setWordWrap(True)
         self.position_lbl.setStyleSheet("font-size: 15px; color: #a6adc8;")
+        self.position_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.position_lbl.mouseReleaseEvent = self._on_position_clicked
         outer.addWidget(self.position_lbl)
 
         # Job posting hyperlink (clickable) - 13px
@@ -644,7 +723,7 @@ class _DetailsPanel(QWidget):
         # Applied date (hide if empty)
         date_applied = (app.get("date_applied") or "").strip()
         if date_applied:
-            self.date_applied_lbl.setText(f"Applied in: {date_applied}")
+            self.date_applied_lbl.setText(f"Applied in: {_fmt_date(date_applied)}")
             self.date_applied_lbl.setVisible(True)
         else:
             self.date_applied_lbl.setVisible(False)
@@ -652,7 +731,9 @@ class _DetailsPanel(QWidget):
         # Last update date (hide if empty)
         date_last_updated = (app.get("date_last_updated") or "").strip()
         if date_last_updated:
-            self.date_last_updated_lbl.setText(f"Last update: {date_last_updated}")
+            self.date_last_updated_lbl.setText(
+                f"Last update: {_fmt_date(date_last_updated)}"
+            )
             self.date_last_updated_lbl.setVisible(True)
         else:
             self.date_last_updated_lbl.setVisible(False)
@@ -660,7 +741,7 @@ class _DetailsPanel(QWidget):
         # Created date (hide if empty)
         date_created = (app.get("date_created") or "").strip()
         if date_created:
-            self.date_created_lbl.setText(f"Created: {date_created}")
+            self.date_created_lbl.setText(f"Created: {_fmt_date(date_created)}")
             self.date_created_lbl.setVisible(True)
         else:
             self.date_created_lbl.setVisible(False)
@@ -682,6 +763,60 @@ class _DetailsPanel(QWidget):
         for widget, ref_id in self._referral_labels:
             widget.deleteLater()
         self._referral_labels.clear()
+
+    def _on_company_clicked(self, event):
+        """Handle click on company label to open edit dialog."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self._app_id is None:
+            return
+        self._open_edit_dialog()
+
+    def _on_position_clicked(self, event):
+        """Handle click on position label to open edit dialog."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self._app_id is None:
+            return
+        self._open_edit_dialog()
+
+    def _open_edit_dialog(self):
+        """Open dialog to edit company, position, and job URL."""
+        if self._app_id is None:
+            return
+        app = self.db.get_application(self._app_id)
+        if not app:
+            return
+
+        dialog = _ApplicationEditDialog(
+            parent=self,
+            company=app.get("company_name", ""),
+            position=app.get("position_name", ""),
+            job_url=app.get("job_posting_url", ""),
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            # Update application with new data, preserving other fields
+            self.db.upsert_application(
+                id=self._app_id,
+                profile_id=app.get("profile_id"),
+                status_id=app.get("status_id"),
+                position_name=data["position"],
+                company_name=data["company"],
+                date_applied=app.get("date_applied"),
+                job_posting_url=data["job_url"],
+                extra_keywords=app.get("extra_keywords", "[]"),
+                section_order=app.get("section_order"),
+                sections_enabled=app.get("sections_enabled"),
+                education_overrides=app.get("education_overrides"),
+                job_posting_description=app.get("job_posting_description"),
+                date_created=app.get("date_created"),
+                date_last_updated=None,  # Will be set to today
+            )
+            # Refresh display
+            updated_app = self.db.get_application(self._app_id)
+            if updated_app:
+                self.set_application(updated_app)
 
 
 # ── applications view ─────────────────────────────────────────────────
