@@ -830,6 +830,12 @@ class Database:
         )
 
     def delete_profile(self, id: int) -> None:
+        self.execute(
+            "UPDATE job_application SET profile_id=NULL WHERE profile_id=?", (id,)
+        )
+        self.execute(
+            "UPDATE resume_config SET profile_id=NULL WHERE profile_id=?", (id,)
+        )
         self.execute("DELETE FROM profile WHERE id=?", (id,))
 
     def get_profile_keywords(self, profile_id: int) -> list[dict]:
