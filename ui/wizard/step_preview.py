@@ -617,7 +617,11 @@ class _ExperienceItem(_SubItem):
         meta_lbl.setStyleSheet("color: #a6adc8; font-size: 16px; font-weight: bold;")
         self._body_layout.addWidget(meta_lbl)
 
-        self._f_desc = QLineEdit(eo.get("organization_description") or "")
+        self._f_desc = QLineEdit(
+            eo.get("organization_description")
+            or job.get("organization_description")
+            or ""
+        )
         self._f_desc.setPlaceholderText("e.g. startup working on X")
         self._f_desc.setStyleSheet(
             "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
@@ -625,7 +629,9 @@ class _ExperienceItem(_SubItem):
         self._f_desc.textChanged.connect(self.changed)
         self._add_body_row("Description", self._f_desc)
 
-        self._f_url = QLineEdit(eo.get("organization_website") or "")
+        self._f_url = QLineEdit(
+            eo.get("organization_website") or job.get("organization_website") or ""
+        )
         self._f_url.setPlaceholderText("https://company.com")
         self._f_url.setStyleSheet(
             "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
