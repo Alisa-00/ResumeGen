@@ -1716,8 +1716,19 @@ class StepPreview(QWidget):
             w.changed.connect(self._on_change)
             return w
         if key == "experience":
+            all_experiences = data.get("experiences") or []
+            # When included_experiences is set, only show those selected experiences
+            # This handles the case when profile is NULL (deleted) and get_resume_data
+            # returns all experiences - we still want to respect the user's selection
+            if inc_exp is not None:
+                exp_map = {e["id"]: e for e in all_experiences}
+                selected_experiences = [
+                    exp_map[eid] for eid in inc_exp if eid in exp_map
+                ]
+            else:
+                selected_experiences = all_experiences
             w = _ExperienceContent(
-                data.get("experiences") or [],
+                selected_experiences,
                 inc_exp,
                 self._bullet_overrides,
                 inc_bullets,
@@ -1726,7 +1737,13 @@ class StepPreview(QWidget):
             w.changed.connect(self._on_change)
             return w
         if key == "education":
-            w = _EducationContent(data.get("education") or [], inc_edu, edu_overrides)
+            all_education = data.get("education") or []
+            if inc_edu is not None:
+                edu_map = {e["id"]: e for e in all_education}
+                selected_education = [edu_map[eid] for eid in inc_edu if eid in edu_map]
+            else:
+                selected_education = all_education
+            w = _EducationContent(selected_education, inc_edu, edu_overrides)
             w.changed.connect(self._on_change)
             return w
         if key == "languages":
@@ -1739,7 +1756,13 @@ class StepPreview(QWidget):
             w.changed.connect(self._on_change)
             return w
         if key == "projects":
-            w = _ProjectsContent(data.get("projects") or [], inc_prj)
+            all_projects = data.get("projects") or []
+            if inc_prj is not None:
+                prj_map = {p["id"]: p for p in all_projects}
+                selected_projects = [prj_map[pid] for pid in inc_prj if pid in prj_map]
+            else:
+                selected_projects = all_projects
+            w = _ProjectsContent(selected_projects, inc_prj)
             w.changed.connect(self._on_change)
             return w
         if key == "keywords":
