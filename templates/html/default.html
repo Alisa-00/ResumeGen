@@ -76,16 +76,11 @@
         <h2 class="section-heading">Education</h2>
         {% for edu in education %}
         <div class="entry edu-entry">
-            <div class="entry-header">
-                <span class="entry-title edu-title">
-                    {{ edu.degree }}{% if edu.field %} in {{ edu.field }}{% endif %}
-                    {% if edu.school %}<span class="edu-divider">|</span><span class="edu-school">{% if edu.school_url %}<a href="{{ edu.school_url }}">{{ edu.school }}</a>{% else %}{{ edu.school }}{% endif %}</span>{% endif %}
-                    {% if edu.location %}<span class="edu-loc">{{ edu.location }}</span>{% endif %}
-                </span>
-                <span class="entry-date">
-                    {% if edu.is_ongoing %}Present{% else %}{{ edu.end_date | format_date(date_format) }}{% endif %}
-                </span>
-            </div>
+            <span class="edu-title">
+                {{ edu.degree }}{% if edu.field %} in {{ edu.field }}{% endif %}
+                <span class="edu-divider">|</span>
+                <span class="edu-school">{% if edu.school_url %}<a href="{{ edu.school_url }}">{{ edu.school }}</a>{% else %}{{ edu.school }}{% endif %}</span>
+            </span>
         </div>
         {% endfor %}
     </section>
@@ -95,14 +90,7 @@
     {% if section == "languages" and sections_enabled.languages and languages %}
     <section>
         <h2 class="section-heading">Languages</h2>
-        <div class="languages-grid">
-            {% for lang in languages %}
-            <div class="language-item">
-                <div class="language-name">{{ lang.name }}</div>
-                <div class="language-level">{{ lang.proficiency_level }}</div>
-            </div>
-            {% endfor %}
-        </div>
+        <p class="languages-list">{% for lang in languages %}{{ lang.name }} - {{ lang.proficiency_level }}{% if not loop.last %} | {% endif %}{% endfor %}</p>
     </section>
     {% endif %}
 
@@ -135,7 +123,7 @@
     {% if section == "keywords" and sections_enabled.keywords and keywords %}
     <section>
         <h2 class="section-heading">Skills</h2>
-        <p class="skills-list">{{ keywords | map(attribute="name") | join(" · ") }}</p>
+        <p class="skills-list">{{ keywords | map(attribute="name") | join(" | ") }}</p>
     </section>
     {% endif %}
 
