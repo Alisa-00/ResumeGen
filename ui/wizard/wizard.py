@@ -63,13 +63,18 @@ class WizardWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _on_next(self, job_data: dict):
-        """Called from step 1. Auto-saves the application, then shows step 2."""
+        """Called from step 1. Auto-saves the application, then shows step 2.
+
+        On first creation, snapshots the user's master data into the application's
+        own storage so step 2 can edit it directly without going back to master.
+        """
         statuses = {s["status"]: s["id"] for s in self.db.get_statuses()}
         status_id = statuses.get("to-apply", 1)
 
         # Extract referrals before saving (they're not stored in job_application table)
         referrals = job_data.pop("referrals", [])
 
+        is_new = self.application_id is None
         self.application_id = self.db.upsert_application(
             profile_id=job_data["profile_id"],
             status_id=status_id,
@@ -77,11 +82,17 @@ class WizardWidget(QWidget):
             company_name=job_data["company_name"],
             date_applied=job_data.get("date_applied")
             or date.today().strftime("%Y-%m-%d"),
-            extra_keywords=json.dumps(job_data.get("extra_kw_ids", [])),
             job_posting_url=job_data.get("job_posting_url", ""),
             id=self.application_id,
         )
         job_data["status_id"] = status_id
+
+        if is_new:
+            self.db.snapshot_master_into_application(
+                self.application_id,
+                profile_id=job_data.get("profile_id"),
+                extra_keyword_ids=job_data.get("extra_kw_ids", []),
+            )
 
         # Save referrals now that we have the application_id
         for ref in referrals:

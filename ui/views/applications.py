@@ -804,25 +804,9 @@ class _DetailsPanel(QWidget):
                 position_name=data["position"],
                 company_name=data["company"],
                 date_applied=app.get("date_applied"),
-                extra_keywords=app.get("extra_keywords", "[]"),
-                section_order=app.get("section_order"),
-                sections_enabled=app.get("sections_enabled"),
-                resume_pdf_path=app.get("resume_pdf_path"),
-                selected_summary_id=app.get("selected_summary_id"),
-                summary_text_override=app.get("summary_text_override"),
-                contact_override=app.get("contact_override"),
-                websites_override=app.get("websites_override"),
-                experience_overrides=app.get("experience_overrides"),
-                included_experiences=app.get("included_experiences"),
-                included_education=app.get("included_education"),
-                included_projects=app.get("included_projects"),
-                included_bullets=app.get("included_bullets"),
-                education_overrides=app.get("education_overrides"),
                 job_posting_url=data["job_url"],
                 job_posting_description=app.get("job_posting_description"),
-                included_languages=app.get("included_languages"),
                 date_created=app.get("date_created"),
-                date_last_updated=None,  # Will be set to today
             )
             # Refresh display
             updated_app = self.db.get_application(self._app_id)

@@ -3,6 +3,8 @@ db/database.py
 Synchronous SQLite interface via stdlib sqlite3.
 """
 
+import json
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -150,14 +152,6 @@ INSERT OR IGNORE INTO job_application_status (status) VALUES
     ('to-apply'), ('applied'), ('phone-screen'), ('interview'),
     ('offer'), ('accepted'), ('ghosted'), ('rejected'), ('withdrawn');
 
-CREATE TABLE IF NOT EXISTS application_bullet_override (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    application_id INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
-    bullet_point_id INTEGER NOT NULL REFERENCES bullet_point(id)   ON DELETE CASCADE,
-    text           TEXT NOT NULL,
-    UNIQUE(application_id, bullet_point_id)
-);
-
 CREATE TABLE IF NOT EXISTS job_application (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     profile_id           INTEGER REFERENCES profile(id),
@@ -167,22 +161,16 @@ CREATE TABLE IF NOT EXISTS job_application (
     date_created         TEXT    NOT NULL,
     date_applied         TEXT,
     date_last_updated    TEXT,
-    extra_keywords       TEXT    NOT NULL DEFAULT '[]',
     section_order        TEXT,
     sections_enabled     TEXT,
     resume_pdf_path      TEXT,
-    keyword_list         TEXT,
-    selected_summary_id  INTEGER,
-    summary_text_override TEXT,
-    contact_override     TEXT,
-    websites_override    TEXT,
-    experience_overrides TEXT,
-    included_experiences TEXT,
-    included_education   TEXT,
-    included_projects    TEXT,
-    included_languages TEXT,
     job_posting_url      TEXT,
-    job_posting_description TEXT
+    job_posting_description TEXT,
+    contact_name         TEXT,
+    contact_email        TEXT,
+    contact_phone        TEXT,
+    contact_location     TEXT,
+    summary_text         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS application_referral (
@@ -195,7 +183,90 @@ CREATE TABLE IF NOT EXISTS application_referral (
     description    TEXT,
     date_added     TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS application_experience (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id           INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+    source_experience_id     INTEGER,
+    sort_order               INTEGER NOT NULL DEFAULT 0,
+    organization_name        TEXT    NOT NULL,
+    position_name            TEXT    NOT NULL,
+    organization_description TEXT,
+    organization_website     TEXT,
+    location                 TEXT,
+    is_ongoing               INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
+    start_date               TEXT,
+    end_date                 TEXT
+);
+
+CREATE TABLE IF NOT EXISTS application_bullet (
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_experience_id INTEGER NOT NULL REFERENCES application_experience(id) ON DELETE CASCADE,
+    source_bullet_id          INTEGER,
+    sort_order                INTEGER NOT NULL DEFAULT 0,
+    text                      TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS application_education (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id      INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+    source_education_id INTEGER,
+    sort_order          INTEGER NOT NULL DEFAULT 0,
+    degree              TEXT    NOT NULL,
+    school              TEXT    NOT NULL,
+    school_url          TEXT,
+    location            TEXT,
+    field               TEXT,
+    gpa                 TEXT,
+    is_ongoing          INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
+    start_date          TEXT,
+    end_date            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS application_project (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id    INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+    source_project_id INTEGER,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    name              TEXT    NOT NULL,
+    link              TEXT,
+    start_date        TEXT,
+    end_date          TEXT,
+    is_ongoing        INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
+    text              TEXT
+);
+
+CREATE TABLE IF NOT EXISTS application_language (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id     INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+    source_language_id INTEGER,
+    sort_order         INTEGER NOT NULL DEFAULT 0,
+    name               TEXT    NOT NULL,
+    proficiency_level  TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS application_website (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+    sort_order     INTEGER NOT NULL DEFAULT 0,
+    label          TEXT    NOT NULL,
+    url            TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS application_keyword (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+    sort_order     INTEGER NOT NULL DEFAULT 0,
+    name           TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    id      INTEGER PRIMARY KEY DEFAULT 1,
+    version INTEGER NOT NULL
+);
 """
+
+CURRENT_SCHEMA_VERSION = 2
 
 
 class Database:
@@ -246,6 +317,95 @@ class Database:
                 date_added     TEXT    NOT NULL
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS application_experience (
+                id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id           INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+                source_experience_id     INTEGER,
+                sort_order               INTEGER NOT NULL DEFAULT 0,
+                organization_name        TEXT    NOT NULL,
+                position_name            TEXT    NOT NULL,
+                organization_description TEXT,
+                organization_website     TEXT,
+                location                 TEXT,
+                is_ongoing               INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
+                start_date               TEXT,
+                end_date                 TEXT
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS application_bullet (
+                id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_experience_id INTEGER NOT NULL REFERENCES application_experience(id) ON DELETE CASCADE,
+                source_bullet_id          INTEGER,
+                sort_order                INTEGER NOT NULL DEFAULT 0,
+                text                      TEXT    NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS application_education (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id      INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+                source_education_id INTEGER,
+                sort_order          INTEGER NOT NULL DEFAULT 0,
+                degree              TEXT    NOT NULL,
+                school              TEXT    NOT NULL,
+                school_url          TEXT,
+                location            TEXT,
+                field               TEXT,
+                gpa                 TEXT,
+                is_ongoing          INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
+                start_date          TEXT,
+                end_date            TEXT
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS application_project (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id    INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+                source_project_id INTEGER,
+                sort_order        INTEGER NOT NULL DEFAULT 0,
+                name              TEXT    NOT NULL,
+                link              TEXT,
+                start_date        TEXT,
+                end_date          TEXT,
+                is_ongoing        INTEGER NOT NULL DEFAULT 0 CHECK (is_ongoing IN (0,1)),
+                text              TEXT
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS application_language (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id     INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+                source_language_id INTEGER,
+                sort_order         INTEGER NOT NULL DEFAULT 0,
+                name               TEXT    NOT NULL,
+                proficiency_level  TEXT    NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS application_website (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+                sort_order     INTEGER NOT NULL DEFAULT 0,
+                label          TEXT    NOT NULL,
+                url            TEXT    NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS application_keyword (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+                sort_order     INTEGER NOT NULL DEFAULT 0,
+                name           TEXT    NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS schema_version (
+                id      INTEGER PRIMARY KEY DEFAULT 1,
+                version INTEGER NOT NULL
+            )
+            """,
         ]
         for sql in table_creations:
             try:
@@ -254,7 +414,9 @@ class Database:
             except sqlite3.Error as e:
                 print(f"[MIGRATE] Warning creating table: {e}")
 
-        # Column migrations
+        # Column migrations — legacy dead columns for job_application are
+        # added here so the v1 snapshot migration can read them from old DBs,
+        # then the v2 migration drops them.
         migrations = [
             ("work_experience", "organization_description", "TEXT"),
             ("work_experience", "organization_website", "TEXT"),
@@ -282,6 +444,11 @@ class Database:
             ("job_application", "included_languages", "TEXT"),
             ("job_application", "date_created", "TEXT"),
             ("job_application", "date_last_updated", "TEXT"),
+            ("job_application", "contact_name", "TEXT"),
+            ("job_application", "contact_email", "TEXT"),
+            ("job_application", "contact_phone", "TEXT"),
+            ("job_application", "contact_location", "TEXT"),
+            ("job_application", "summary_text", "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -302,6 +469,352 @@ class Database:
                 raise RuntimeError(
                     f"[MIGRATE] Database error adding {table}.{column}: {e}"
                 ) from e
+
+        # Eager batch migration of legacy applications into the snapshot tables.
+        # Runs once, gated by schema_version.
+        self._migrate_legacy_applications()
+
+    # ------------------------------------------------------------------
+    # legacy application snapshot migration (one-time, on startup)
+    # ------------------------------------------------------------------
+
+    def _migrate_legacy_applications(self) -> None:
+        version = self.get_schema_version()
+        if version >= CURRENT_SCHEMA_VERSION:
+            return
+
+        if version < 1:
+            apps = self.fetch_all("SELECT id FROM job_application")
+            if apps:
+                backup = Path(str(self.db_path) + ".pre-snapshot.bak")
+                try:
+                    shutil.copy2(self.db_path, backup)
+                    print(f"[MIGRATE] Backed up DB to {backup}")
+                except OSError as e:
+                    print(f"[MIGRATE] Backup failed (continuing): {e}")
+                for row in apps:
+                    app_id = row["id"]
+                    existing = self.fetch_one(
+                        "SELECT COUNT(*) AS n FROM application_experience WHERE application_id=?",
+                        (app_id,),
+                    )
+                    has_contact = self.fetch_one(
+                        """SELECT contact_name, summary_text
+                           FROM job_application WHERE id=?""",
+                        (app_id,),
+                    ) or {}
+                    already_snapshotted = (
+                        (existing or {}).get("n", 0) > 0
+                        or has_contact.get("contact_name")
+                        or has_contact.get("summary_text")
+                    )
+                    if already_snapshotted:
+                        continue
+                    try:
+                        self._materialize_legacy_snapshot(app_id)
+                    except Exception as e:
+                        print(f"[MIGRATE] App {app_id} migration failed (skipping): {e}")
+            self.set_schema_version(1)
+
+        if version < 2:
+            self._drop_legacy_columns()
+            self.set_schema_version(2)
+
+    def _drop_legacy_columns(self) -> None:
+        dead_cols = [
+            "extra_keywords", "summary_text_override", "contact_override",
+            "websites_override", "experience_overrides", "education_overrides",
+            "included_experiences", "included_education", "included_projects",
+            "included_languages", "included_bullets", "keyword_list",
+            "selected_summary_id",
+        ]
+        existing = {
+            r["name"]
+            for r in self.fetch_all("PRAGMA table_info(job_application)")
+        }
+        for col in dead_cols:
+            if col in existing:
+                try:
+                    self.conn.execute(
+                        f"ALTER TABLE job_application DROP COLUMN {col}"
+                    )
+                    self.conn.commit()
+                except Exception as e:
+                    print(f"[MIGRATE] Could not drop {col}: {e}")
+        try:
+            self.conn.execute("DROP TABLE IF EXISTS application_bullet_override")
+            self.conn.commit()
+            print("[MIGRATE] Dropped application_bullet_override table")
+        except Exception as e:
+            print(f"[MIGRATE] Could not drop application_bullet_override: {e}")
+
+    def _materialize_legacy_snapshot(self, application_id: int) -> None:
+        """Replay the pre-refactor merge (master data + override JSON columns)
+        and fan the result out into the new snapshot tables.
+        """
+        app = self.fetch_one(
+            "SELECT * FROM job_application WHERE id=?", (application_id,)
+        )
+        if not app:
+            return
+        profile_id = app.get("profile_id")
+
+        def _parse(col, default):
+            raw = app.get(col)
+            if not raw:
+                return default
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return default
+
+        extra_kw_ids = _parse("extra_keywords", []) or []
+        contact_override = _parse("contact_override", None)
+        websites_override = _parse("websites_override", None)
+        experience_overrides_raw = _parse("experience_overrides", {}) or {}
+        education_overrides_raw = _parse("education_overrides", {}) or {}
+        included_experiences = _parse("included_experiences", None)
+        included_education = _parse("included_education", None)
+        included_projects = _parse("included_projects", None)
+        included_bullets = _parse("included_bullets", None)
+        included_languages = _parse("included_languages", None)
+        summary_text_override = app.get("summary_text_override")
+
+        section_order_raw = app.get("section_order")
+        sections_enabled_raw = app.get("sections_enabled")
+
+        bullet_overrides = self.get_bullet_overrides(application_id)
+
+        if profile_id:
+            data = self.get_resume_data(profile_id)
+        else:
+            data = {
+                "contact": self.get_contact(),
+                "websites": [],
+                "summary_text": "",
+                "experiences": [],
+                "education": [],
+                "languages": [],
+                "projects": [],
+                "profile_keywords": [],
+                "settings": self.get_settings(),
+                "profile_settings": None,
+                "template": None,
+            }
+
+        # contact
+        master_contact = data.get("contact") or {}
+        merged_contact = {**master_contact, **(contact_override or {})}
+        self.update_application_contact(
+            application_id,
+            merged_contact.get("name") or "",
+            merged_contact.get("email") or "",
+            merged_contact.get("phone") or "",
+            merged_contact.get("location") or "",
+        )
+
+        # websites
+        websites = (
+            websites_override if websites_override is not None
+            else (data.get("websites") or [])
+        )
+        self.replace_application_websites(
+            application_id,
+            [{"label": w.get("label", ""), "url": w.get("url", "")} for w in websites],
+        )
+
+        # summary
+        summary_text = summary_text_override or data.get("summary_text") or ""
+        self.update_application_summary(application_id, summary_text)
+
+        # keywords (profile ∪ extras, deduped; preserve name-order)
+        profile_kws = data.get("profile_keywords") or []
+        kw_names: list[str] = []
+        seen_ids: set[int] = set()
+        for kw in profile_kws:
+            if kw["id"] not in seen_ids:
+                seen_ids.add(kw["id"])
+                kw_names.append(kw["name"])
+        if extra_kw_ids:
+            kw_map = {kw["id"]: kw for kw in self.get_keywords()}
+            for kid in extra_kw_ids:
+                if kid in kw_map and kid not in seen_ids:
+                    seen_ids.add(kid)
+                    kw_names.append(kw_map[kid]["name"])
+        self.replace_application_keywords(application_id, kw_names)
+
+        kw_id_set: set[int] = {kw["id"] for kw in profile_kws}
+        kw_id_set.update(extra_kw_ids)
+
+        template = data.get("template") or {}
+        min_bp = template.get("min_bullet_points_per_job", 2)
+        max_bp = template.get("max_bullet_points_per_job", 5)
+
+        # experiences
+        exp_ov_map = {int(k): (v or {}) for k, v in experience_overrides_raw.items()}
+        inc_bullets_map: dict[int, list[int]] | None = None
+        if included_bullets is not None:
+            inc_bullets_map = {int(k): list(v or []) for k, v in included_bullets.items()}
+
+        exp_pool = data.get("experiences") or []
+        if included_experiences is not None:
+            order = {eid: i for i, eid in enumerate(included_experiences)}
+            exp_pool = sorted(
+                [e for e in exp_pool if e["id"] in order],
+                key=lambda e: order[e["id"]],
+            )
+
+        experiences_payload = []
+        for job in exp_pool:
+            ov = exp_ov_map.get(job["id"], {})
+            bullets_all = list(job.get("bullet_points") or [])
+            if inc_bullets_map is not None and job["id"] in inc_bullets_map:
+                id_list = inc_bullets_map[job["id"]]
+                bid_map = {b["id"]: b for b in bullets_all}
+                matched = []
+                for bid in id_list:
+                    if bid in bid_map:
+                        b = bid_map[bid]
+                        matched.append({
+                            "id": b["id"],
+                            "text": bullet_overrides.get(bid, b.get("text", "")),
+                        })
+            else:
+                def _has_match(b):
+                    return bool(set(b.get("keyword_ids") or []) & kw_id_set)
+                matched_bs = [b for b in bullets_all if _has_match(b)]
+                unmatched_bs = [b for b in bullets_all if not _has_match(b)]
+                if len(matched_bs) < min_bp:
+                    matched_bs += unmatched_bs[: min_bp - len(matched_bs)]
+                matched_bs.sort(key=lambda b: b.get("sort_order", 0))
+                matched_bs = matched_bs[:max_bp]
+                matched = [
+                    {
+                        "id": b["id"],
+                        "text": bullet_overrides.get(b["id"], b.get("text", "")),
+                    }
+                    for b in matched_bs
+                ]
+
+            def _pick(key, default=None):
+                return ov[key] if key in ov else job.get(key, default)
+
+            experiences_payload.append({
+                "source_experience_id": job["id"],
+                "organization_name": _pick("organization_name", "") or "",
+                "position_name": _pick("position_name", "") or "",
+                "organization_description": _pick("organization_description"),
+                "organization_website": _pick("organization_website"),
+                "location": _pick("location"),
+                "is_ongoing": bool(_pick("is_ongoing")),
+                "start_date": _pick("start_date"),
+                "end_date": _pick("end_date"),
+                "bullets": [
+                    {"source_bullet_id": b["id"], "text": b["text"]}
+                    for b in matched
+                ],
+            })
+        self.replace_application_experiences(application_id, experiences_payload)
+
+        # education
+        edu_ov_map = {int(k): (v or {}) for k, v in education_overrides_raw.items()}
+        edu_pool = data.get("education") or []
+        if included_education is not None:
+            order = {eid: i for i, eid in enumerate(included_education)}
+            edu_pool = sorted(
+                [e for e in edu_pool if e["id"] in order],
+                key=lambda e: order[e["id"]],
+            )
+
+        education_payload = []
+        for e in edu_pool:
+            ov = edu_ov_map.get(e["id"], {})
+
+            def _pick(key, default=None):
+                return ov[key] if key in ov else e.get(key, default)
+
+            education_payload.append({
+                "source_education_id": e["id"],
+                "degree": _pick("degree", "") or "",
+                "school": _pick("school", "") or "",
+                "school_url": _pick("school_url"),
+                "location": _pick("location"),
+                "field": _pick("field"),
+                "gpa": _pick("gpa"),
+                "is_ongoing": bool(_pick("is_ongoing")),
+                "start_date": _pick("start_date"),
+                "end_date": _pick("end_date"),
+            })
+        self.replace_application_education(application_id, education_payload)
+
+        # projects
+        prj_pool = data.get("projects") or []
+        if included_projects is not None:
+            order = {pid: i for i, pid in enumerate(included_projects)}
+            proj_list = sorted(
+                [p for p in prj_pool if p["id"] in order],
+                key=lambda p: order[p["id"]],
+            )
+        else:
+            proj_list = [
+                p for p in prj_pool if set(p.get("keyword_ids") or []) & kw_id_set
+            ]
+        self.replace_application_projects(
+            application_id,
+            [
+                {
+                    "source_project_id": p["id"],
+                    "name": p.get("name", ""),
+                    "link": p.get("link"),
+                    "start_date": p.get("start_date"),
+                    "end_date": p.get("end_date"),
+                    "is_ongoing": bool(p.get("is_ongoing")),
+                    "text": p.get("text"),
+                }
+                for p in proj_list
+            ],
+        )
+
+        # languages
+        if included_languages is not None:
+            lang_pool = data.get("languages") or []
+            lang_map = {lang["id"]: lang for lang in lang_pool}
+            languages_payload = []
+            for lang_data in included_languages:
+                lid = lang_data.get("id")
+                original = lang_map.get(lid) if lid else None
+                name = lang_data.get("name") or ((original or {}).get("name") or "")
+                prof = lang_data.get("proficiency_level") or (
+                    (original or {}).get("proficiency_level") or ""
+                )
+                if name:
+                    languages_payload.append({
+                        "source_language_id": lid,
+                        "name": name,
+                        "proficiency_level": prof,
+                    })
+        else:
+            languages_payload = [
+                {
+                    "source_language_id": lang["id"],
+                    "name": lang.get("name", ""),
+                    "proficiency_level": lang.get("proficiency_level", ""),
+                }
+                for lang in (data.get("languages") or [])
+            ]
+        self.replace_application_languages(application_id, languages_payload)
+
+        # layout
+        if not section_order_raw or not sections_enabled_raw:
+            ps = data.get("profile_settings") or {}
+            settings = data.get("settings") or {}
+            if not section_order_raw:
+                section_order_raw = ps.get("section_order") or settings.get("section_order")
+            if not sections_enabled_raw:
+                sections_enabled_raw = ps.get("sections_enabled") or settings.get("sections_enabled")
+        self.update_application_layout(
+            application_id, section_order_raw, sections_enabled_raw
+        )
 
     # ------------------------------------------------------------------
     # helpers
@@ -886,26 +1399,12 @@ class Database:
         position_name: str,
         company_name: str,
         date_applied: str,
-        extra_keywords: str = "[]",
-        section_order: str | None = None,
-        sections_enabled: str | None = None,
-        resume_pdf_path: str | None = None,
-        selected_summary_id: int | None = None,
-        summary_text_override: str | None = None,
-        contact_override: str | None = None,
-        websites_override: str | None = None,
-        experience_overrides: str | None = None,
-        included_experiences: str | None = None,
-        included_education: str | None = None,
-        included_projects: str | None = None,
-        included_bullets: str | None = None,
-        education_overrides: str | None = None,
         job_posting_url: str | None = None,
         job_posting_description: str | None = None,
-        included_languages: str | None = None,
         id: int | None = None,
         date_created: str | None = None,
         date_last_updated: str | None = None,
+        **_kwargs,
     ) -> int:
         from datetime import date as _date
 
@@ -917,40 +1416,13 @@ class Database:
             self.execute(
                 """UPDATE job_application SET
                    profile_id=?, status_id=?, position_name=?, company_name=?,
-                   date_applied=?, date_last_updated=?, extra_keywords=?, section_order=?,
-                   sections_enabled=?, resume_pdf_path=?,
-                   selected_summary_id=?, summary_text_override=?,
-                   contact_override=?, websites_override=?, experience_overrides=?,
-                   included_experiences=?, included_education=?,
-                   included_projects=?, included_bullets=?,
-                   education_overrides=?, job_posting_url=?, job_posting_description=?,
-                   included_languages=?
+                   date_applied=?, date_last_updated=?,
+                   job_posting_url=?, job_posting_description=?
                    WHERE id=?""",
                 (
-                    profile_id,
-                    status_id,
-                    position_name,
-                    company_name,
-                    date_applied,
-                    date_last_updated,
-                    extra_keywords,
-                    section_order,
-                    sections_enabled,
-                    resume_pdf_path,
-                    selected_summary_id,
-                    summary_text_override,
-                    contact_override,
-                    websites_override,
-                    experience_overrides,
-                    included_experiences,
-                    included_education,
-                    included_projects,
-                    included_bullets,
-                    education_overrides,
-                    job_posting_url,
-                    job_posting_description,
-                    included_languages,
-                    id,
+                    profile_id, status_id, position_name, company_name,
+                    date_applied, date_last_updated,
+                    job_posting_url, job_posting_description, id,
                 ),
             )
             return id
@@ -959,42 +1431,13 @@ class Database:
         return self.execute(
             """INSERT INTO job_application
                (profile_id, status_id, position_name, company_name,
-                date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
-                resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
-                contact_override, websites_override, experience_overrides,
-                included_experiences, included_education, included_projects, included_languages,
+                date_created, date_applied, date_last_updated,
                 job_posting_url, job_posting_description)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            # 23 columns: profile_id, status_id, position_name, company_name,
-            #   date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
-            #   resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
-            #   contact_override, websites_override, experience_overrides,
-            #   included_experiences, included_education, included_projects, included_languages,
-            #   job_posting_url, job_posting_description
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (
-                profile_id,
-                status_id,
-                position_name,
-                company_name,
-                date_created,
-                date_applied,
-                date_last_updated,
-                extra_keywords,
-                section_order,
-                sections_enabled,
-                resume_pdf_path,
-                None,  # keyword_list - not exposed as parameter
-                selected_summary_id,
-                summary_text_override,
-                contact_override,
-                websites_override,
-                experience_overrides,
-                included_experiences,
-                included_education,
-                included_projects,
-                included_languages,
-                job_posting_url,
-                job_posting_description,
+                profile_id, status_id, position_name, company_name,
+                date_created, date_applied, date_last_updated,
+                job_posting_url, job_posting_description,
             ),
         )
 
@@ -1066,6 +1509,446 @@ class Database:
         self.execute("DELETE FROM application_referral WHERE id=?", (referral_id,))
 
     # ------------------------------------------------------------------
+    # application snapshot (self-contained per-application data)
+    # ------------------------------------------------------------------
+
+    def get_schema_version(self) -> int:
+        row = self.fetch_one("SELECT version FROM schema_version WHERE id=1")
+        return (row or {}).get("version") or 0
+
+    def set_schema_version(self, version: int) -> None:
+        self.execute(
+            """INSERT INTO schema_version (id, version) VALUES (1, ?)
+               ON CONFLICT(id) DO UPDATE SET version=excluded.version""",
+            (version,),
+        )
+
+    def snapshot_master_into_application(
+        self,
+        application_id: int,
+        profile_id: int | None,
+        extra_keyword_ids: list[int] | None = None,
+    ) -> None:
+        """Copy the user's current master data into this application's snapshot tables.
+
+        Applies the same keyword filter the legacy generator used at render time
+        (profile keywords ∪ extras) so the initial snapshot reflects the same
+        bullet / project set the user would have seen pre-refactor. After this
+        call, the application is self-contained — edits go to the snapshot
+        tables, not back to master.
+        """
+        extra_keyword_ids = extra_keyword_ids or []
+
+        data: dict = self.get_resume_data(profile_id) if profile_id else {
+            "contact": self.get_contact(),
+            "websites": [],
+            "summary_text": "",
+            "experiences": [],
+            "education": [],
+            "languages": [],
+            "projects": [],
+            "profile_keywords": [],
+            "settings": self.get_settings(),
+            "profile_settings": None,
+            "template": None,
+        }
+
+        contact = data.get("contact") or {}
+        self.update_application_contact(
+            application_id,
+            contact.get("name") or "",
+            contact.get("email") or "",
+            contact.get("phone") or "",
+            contact.get("location") or "",
+        )
+        self.replace_application_websites(
+            application_id,
+            [{"label": w["label"], "url": w["url"]} for w in (data.get("websites") or [])],
+        )
+
+        self.update_application_summary(application_id, data.get("summary_text") or "")
+
+        kw_names: list[str] = []
+        seen: set[int] = set()
+        for kw in data.get("profile_keywords") or []:
+            if kw["id"] not in seen:
+                seen.add(kw["id"])
+                kw_names.append(kw["name"])
+        if extra_keyword_ids:
+            kw_map = {kw["id"]: kw for kw in self.get_keywords()}
+            for kid in extra_keyword_ids:
+                if kid in kw_map and kid not in seen:
+                    seen.add(kid)
+                    kw_names.append(kw_map[kid]["name"])
+        self.replace_application_keywords(application_id, kw_names)
+
+        kw_id_set: set[int] = {kw["id"] for kw in (data.get("profile_keywords") or [])}
+        kw_id_set.update(extra_keyword_ids)
+
+        template = data.get("template") or {}
+        min_bp = template.get("min_bullet_points_per_job", 2)
+        max_bp = template.get("max_bullet_points_per_job", 5)
+
+        experiences_payload = []
+        for job in data.get("experiences") or []:
+            bullets = list(job.get("bullet_points") or [])
+            matched = [b for b in bullets if kw_id_set & set(b.get("keyword_ids") or [])]
+            unmatched = [b for b in bullets if not (kw_id_set & set(b.get("keyword_ids") or []))]
+            if len(matched) < min_bp:
+                matched += unmatched[: min_bp - len(matched)]
+            matched.sort(key=lambda b: b.get("sort_order", 0))
+            matched = matched[:max_bp]
+            experiences_payload.append({
+                "source_experience_id": job["id"],
+                "organization_name": job.get("organization_name", ""),
+                "position_name": job.get("position_name", ""),
+                "organization_description": job.get("organization_description"),
+                "organization_website": job.get("organization_website"),
+                "location": job.get("location"),
+                "is_ongoing": bool(job.get("is_ongoing")),
+                "start_date": job.get("start_date"),
+                "end_date": job.get("end_date"),
+                "bullets": [
+                    {
+                        "source_bullet_id": b["id"],
+                        "text": b.get("text", ""),
+                    }
+                    for b in matched
+                ],
+            })
+        self.replace_application_experiences(application_id, experiences_payload)
+
+        education_payload = [
+            {
+                "source_education_id": e["id"],
+                "degree": e.get("degree", ""),
+                "school": e.get("school", ""),
+                "school_url": e.get("school_url"),
+                "location": e.get("location"),
+                "field": e.get("field"),
+                "gpa": e.get("gpa"),
+                "is_ongoing": bool(e.get("is_ongoing")),
+                "start_date": e.get("start_date"),
+                "end_date": e.get("end_date"),
+            }
+            for e in (data.get("education") or [])
+        ]
+        self.replace_application_education(application_id, education_payload)
+
+        projects_payload = []
+        for p in data.get("projects") or []:
+            if kw_id_set & set(p.get("keyword_ids") or []):
+                projects_payload.append({
+                    "source_project_id": p["id"],
+                    "name": p.get("name", ""),
+                    "link": p.get("link"),
+                    "start_date": p.get("start_date"),
+                    "end_date": p.get("end_date"),
+                    "is_ongoing": bool(p.get("is_ongoing")),
+                    "text": p.get("text"),
+                })
+        self.replace_application_projects(application_id, projects_payload)
+
+        languages_payload = [
+            {
+                "source_language_id": lang["id"],
+                "name": lang.get("name", ""),
+                "proficiency_level": lang.get("proficiency_level", ""),
+            }
+            for lang in (data.get("languages") or [])
+        ]
+        self.replace_application_languages(application_id, languages_payload)
+
+        ps = data.get("profile_settings") or {}
+        settings = data.get("settings") or self.get_settings()
+        section_order = ps.get("section_order") or settings.get("section_order")
+        sections_enabled = ps.get("sections_enabled") or settings.get("sections_enabled")
+        self.update_application_layout(application_id, section_order, sections_enabled)
+
+    def get_application_snapshot(self, application_id: int) -> dict:
+        """Return the full self-contained data needed to render this application."""
+        app = self.fetch_one(
+            """SELECT contact_name, contact_email, contact_phone, contact_location,
+                      summary_text, section_order, sections_enabled, profile_id
+               FROM job_application WHERE id=?""",
+            (application_id,),
+        ) or {}
+
+        websites = self.fetch_all(
+            """SELECT id, sort_order, label, url
+               FROM application_website
+               WHERE application_id=?
+               ORDER BY sort_order, id""",
+            (application_id,),
+        )
+
+        experience_rows = self.fetch_all(
+            """SELECT * FROM application_experience
+               WHERE application_id=?
+               ORDER BY sort_order, id""",
+            (application_id,),
+        )
+        experiences = []
+        for e in experience_rows:
+            bullets = self.fetch_all(
+                """SELECT id, source_bullet_id, sort_order, text
+                   FROM application_bullet
+                   WHERE application_experience_id=?
+                   ORDER BY sort_order, id""",
+                (e["id"],),
+            )
+            experiences.append({**e, "bullet_points": bullets})
+
+        education = self.fetch_all(
+            """SELECT * FROM application_education
+               WHERE application_id=?
+               ORDER BY sort_order, id""",
+            (application_id,),
+        )
+
+        projects = self.fetch_all(
+            """SELECT * FROM application_project
+               WHERE application_id=?
+               ORDER BY sort_order, id""",
+            (application_id,),
+        )
+
+        languages = self.fetch_all(
+            """SELECT * FROM application_language
+               WHERE application_id=?
+               ORDER BY sort_order, id""",
+            (application_id,),
+        )
+
+        keywords = self.fetch_all(
+            """SELECT id, sort_order, name
+               FROM application_keyword
+               WHERE application_id=?
+               ORDER BY sort_order, id""",
+            (application_id,),
+        )
+
+        settings = self.get_settings()
+        template = None
+        profile_id = app.get("profile_id")
+        config = None
+        if profile_id:
+            config = self.fetch_one(
+                "SELECT * FROM resume_config WHERE profile_id=? LIMIT 1", (profile_id,)
+            )
+        tmpl_id = (config or {}).get("template_id") or (settings or {}).get("default_template_id")
+        if tmpl_id:
+            template = self.fetch_one(
+                "SELECT * FROM resume_template WHERE id=?", (tmpl_id,)
+            )
+
+        return dict(
+            contact={
+                "name": app.get("contact_name") or "",
+                "email": app.get("contact_email") or "",
+                "phone": app.get("contact_phone") or "",
+                "location": app.get("contact_location") or "",
+            },
+            websites=websites,
+            summary_text=app.get("summary_text") or "",
+            experiences=experiences,
+            education=education,
+            projects=projects,
+            languages=languages,
+            keywords=keywords,
+            section_order=app.get("section_order"),
+            sections_enabled=app.get("sections_enabled"),
+            settings=settings,
+            template=template,
+        )
+
+    def replace_application_websites(
+        self, application_id: int, rows: list[dict]
+    ) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM application_website WHERE application_id=?",
+                (application_id,),
+            )
+            for i, r in enumerate(rows):
+                self.conn.execute(
+                    """INSERT INTO application_website
+                       (application_id, sort_order, label, url)
+                       VALUES (?,?,?,?)""",
+                    (application_id, i, r.get("label", ""), r.get("url", "")),
+                )
+
+    def replace_application_keywords(
+        self, application_id: int, names: list[str]
+    ) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM application_keyword WHERE application_id=?",
+                (application_id,),
+            )
+            for i, name in enumerate(names):
+                if not name:
+                    continue
+                self.conn.execute(
+                    """INSERT INTO application_keyword
+                       (application_id, sort_order, name)
+                       VALUES (?,?,?)""",
+                    (application_id, i, name),
+                )
+
+    def replace_application_experiences(
+        self, application_id: int, experiences: list[dict]
+    ) -> None:
+        """Each experience dict may carry a 'bullets' list[dict] (source_bullet_id, text)."""
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM application_experience WHERE application_id=?",
+                (application_id,),
+            )
+            for i, e in enumerate(experiences):
+                cur = self.conn.execute(
+                    """INSERT INTO application_experience
+                       (application_id, source_experience_id, sort_order,
+                        organization_name, position_name, organization_description,
+                        organization_website, location, is_ongoing, start_date, end_date)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        application_id,
+                        e.get("source_experience_id"),
+                        i,
+                        e.get("organization_name", ""),
+                        e.get("position_name", ""),
+                        e.get("organization_description"),
+                        e.get("organization_website"),
+                        e.get("location"),
+                        int(bool(e.get("is_ongoing"))),
+                        e.get("start_date"),
+                        e.get("end_date"),
+                    ),
+                )
+                ae_id = cur.lastrowid
+                for j, b in enumerate(e.get("bullets") or []):
+                    self.conn.execute(
+                        """INSERT INTO application_bullet
+                           (application_experience_id, source_bullet_id, sort_order, text)
+                           VALUES (?,?,?,?)""",
+                        (ae_id, b.get("source_bullet_id"), j, b.get("text", "")),
+                    )
+
+    def replace_application_education(
+        self, application_id: int, rows: list[dict]
+    ) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM application_education WHERE application_id=?",
+                (application_id,),
+            )
+            for i, r in enumerate(rows):
+                self.conn.execute(
+                    """INSERT INTO application_education
+                       (application_id, source_education_id, sort_order, degree, school,
+                        school_url, location, field, gpa, is_ongoing, start_date, end_date)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        application_id,
+                        r.get("source_education_id"),
+                        i,
+                        r.get("degree", ""),
+                        r.get("school", ""),
+                        r.get("school_url"),
+                        r.get("location"),
+                        r.get("field"),
+                        r.get("gpa"),
+                        int(bool(r.get("is_ongoing"))),
+                        r.get("start_date"),
+                        r.get("end_date"),
+                    ),
+                )
+
+    def replace_application_projects(
+        self, application_id: int, rows: list[dict]
+    ) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM application_project WHERE application_id=?",
+                (application_id,),
+            )
+            for i, r in enumerate(rows):
+                self.conn.execute(
+                    """INSERT INTO application_project
+                       (application_id, source_project_id, sort_order, name, link,
+                        start_date, end_date, is_ongoing, text)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (
+                        application_id,
+                        r.get("source_project_id"),
+                        i,
+                        r.get("name", ""),
+                        r.get("link"),
+                        r.get("start_date"),
+                        r.get("end_date"),
+                        int(bool(r.get("is_ongoing"))),
+                        r.get("text"),
+                    ),
+                )
+
+    def replace_application_languages(
+        self, application_id: int, rows: list[dict]
+    ) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM application_language WHERE application_id=?",
+                (application_id,),
+            )
+            for i, r in enumerate(rows):
+                self.conn.execute(
+                    """INSERT INTO application_language
+                       (application_id, source_language_id, sort_order, name, proficiency_level)
+                       VALUES (?,?,?,?,?)""",
+                    (
+                        application_id,
+                        r.get("source_language_id"),
+                        i,
+                        r.get("name", ""),
+                        r.get("proficiency_level", ""),
+                    ),
+                )
+
+    def update_application_contact(
+        self,
+        application_id: int,
+        name: str,
+        email: str,
+        phone: str,
+        location: str,
+    ) -> None:
+        self.execute(
+            """UPDATE job_application
+               SET contact_name=?, contact_email=?, contact_phone=?, contact_location=?
+               WHERE id=?""",
+            (name, email, phone, location, application_id),
+        )
+
+    def update_application_summary(self, application_id: int, text: str) -> None:
+        self.execute(
+            "UPDATE job_application SET summary_text=? WHERE id=?",
+            (text, application_id),
+        )
+
+    def update_application_layout(
+        self,
+        application_id: int,
+        section_order: str | None,
+        sections_enabled: str | None,
+    ) -> None:
+        self.execute(
+            """UPDATE job_application
+               SET section_order=?, sections_enabled=?
+               WHERE id=?""",
+            (section_order, sections_enabled, application_id),
+        )
+
+    # ------------------------------------------------------------------
     # bullet overrides
     # ------------------------------------------------------------------
 
@@ -1076,19 +1959,3 @@ class Database:
         )
         return {r["bullet_point_id"]: r["text"] for r in rows}
 
-    def set_bullet_override(
-        self, application_id: int, bullet_point_id: int, text: str
-    ) -> None:
-        self.execute(
-            """INSERT INTO application_bullet_override (application_id, bullet_point_id, text)
-               VALUES (?,?,?)
-               ON CONFLICT(application_id, bullet_point_id)
-               DO UPDATE SET text=excluded.text""",
-            (application_id, bullet_point_id, text),
-        )
-
-    def clear_bullet_overrides(self, application_id: int) -> None:
-        self.execute(
-            "DELETE FROM application_bullet_override WHERE application_id=?",
-            (application_id,),
-        )

@@ -158,16 +158,6 @@ class _BulletSubItem(QWidget):
         self.edit.textChanged.connect(self.changed)
         hl.addWidget(self.edit, 1)
 
-        rst = QPushButton("↺")
-        rst.setFixedSize(28, 28)
-        rst.setFlat(True)
-        rst.setStyleSheet(
-            "QPushButton { color: #a6adc8; background: transparent; border: none; min-height:0; min-width:0; }"
-        )
-        rst.setToolTip("Reset to original")
-        rst.clicked.connect(lambda: self.edit.setText(self._original))
-        hl.addWidget(rst)
-
         rm = small_danger_btn()
         rm.clicked.connect(lambda: self.removed.emit(self))
         hl.addWidget(rm)
@@ -1479,21 +1469,35 @@ class StepPreview(QWidget):
         self._regen_token = 0
         self._active_tasks: set = set()
 
-        # State tracking for concurrency protection
         self._is_processing: bool = False
         self._pending_regen: bool = False
         self._pending_save: bool = False
 
-        self._bullet_overrides: dict[int, str] = {}
-        self._app: dict | None = None
-        if application_id:
-            self._bullet_overrides = db.get_bullet_overrides(application_id)
-            self._app = db.get_application(application_id)
+        self._snapshot = db.get_application_snapshot(application_id)
 
-        self._resume_data = db.get_resume_data(job_data["profile_id"])
+        profile_id = job_data.get("profile_id")
+        if profile_id:
+            self._master = db.get_resume_data(profile_id)
+        else:
+            self._master = {
+                "contact": db.get_contact(),
+                "websites": [],
+                "summary_text": "",
+                "experiences": [],
+                "education": [],
+                "languages": [],
+                "projects": [],
+                "profile_keywords": [],
+                "settings": db.get_settings(),
+                "profile_settings": None,
+                "template": None,
+            }
         self._all_kw = db.get_keywords()
         self._all_profiles = db.get_profiles()
-        self._profile_kw_ids = {k["id"] for k in self._resume_data["profile_keywords"]}
+        self._all_languages_master = db.get_languages()
+
+        # name → id for round-tripping snapshot keywords through the id-based widget
+        self._kw_name_to_id = {kw["name"]: kw["id"] for kw in self._all_kw}
 
         self._debounce = QTimer()
         self._debounce.setSingleShot(True)
@@ -1572,219 +1576,178 @@ class StepPreview(QWidget):
         root.addWidget(splitter, 1)
 
     def _populate_sections(self):
-        app = self._app
+        snap = self._snapshot
 
-        if app and app.get("section_order"):
-            order = json.loads(app["section_order"])
-            enabled = {
-                k: bool(v) for k, v in json.loads(app["sections_enabled"]).items()
-            }
-        else:
-            ps = self._resume_data.get("profile_settings")
-            if ps and ps.get("section_order"):
-                order = json.loads(ps["section_order"])
-                enabled = {
-                    k: bool(v) for k, v in json.loads(ps["sections_enabled"]).items()
-                }
-            else:
-                s = self._resume_data["settings"]
-                order = json.loads(s["section_order"])
-                enabled = {
-                    k: bool(v) for k, v in json.loads(s["sections_enabled"]).items()
-                }
+        settings = self._master.get("settings") or {}
+        order_raw = snap.get("section_order")
+        enabled_raw = snap.get("sections_enabled")
+        order = (
+            json.loads(order_raw)
+            if order_raw
+            else json.loads(settings.get("section_order") or "[]")
+        )
+        enabled = {
+            k: bool(v)
+            for k, v in (
+                json.loads(enabled_raw)
+                if enabled_raw
+                else json.loads(settings.get("sections_enabled") or "{}")
+            ).items()
+        }
 
-        inc_exp = (
-            json.loads(app["included_experiences"])
-            if app and app.get("included_experiences")
-            else None
-        )
-        inc_edu = (
-            json.loads(app["included_education"])
-            if app and app.get("included_education")
-            else None
-        )
-        inc_prj = (
-            json.loads(app["included_projects"])
-            if app and app.get("included_projects")
-            else None
-        )
-        inc_lang = (
-            json.loads(app["included_languages"])
-            if app and app.get("included_languages")
-            else None
-        )
-        inc_bullets = (
-            {int(k): v for k, v in json.loads(app["included_bullets"]).items()}
-            if app and app.get("included_bullets")
-            else None
-        )
-        edu_overrides = (
-            {int(k): v for k, v in json.loads(app["education_overrides"]).items()}
-            if app and app.get("education_overrides")
-            else None
-        )
-        exp_overrides = (
-            {int(k): v for k, v in json.loads(app["experience_overrides"]).items()}
-            if app and app.get("experience_overrides")
-            else None
-        )
-        sum_text = app.get("summary_text_override") if app else None
-        extra = (
-            json.loads(app["extra_keywords"])
-            if app and app.get("extra_keywords")
-            else self.job_data.get("extra_kw_ids", [])
-        )
-        kw_list = (
-            json.loads(app["keyword_list"]) if app and app.get("keyword_list") else None
-        )
-
-        saved_contact = (
-            json.loads(app["contact_override"])
-            if app and app.get("contact_override")
-            else None
-        )
-        saved_websites = (
-            json.loads(app["websites_override"])
-            if app and app.get("websites_override")
-            else None
-        )
-
-        # Ensure all sections from SECTION_LABELS are in the order (for backwards compatibility)
-        # Add any missing sections (like "languages" for older databases) to the end
+        # Missing sections (e.g. added to SECTION_LABELS in a later release) go on the end.
         for key in SECTION_LABELS:
             if key not in order and key != "custom":
                 order.append(key)
-                enabled[key] = True  # Enable by default
+                enabled[key] = True
 
         for key in order:
             if key == "custom":
                 continue
-            content = self._make_content(
-                key,
-                self._resume_data,
-                inc_exp,
-                inc_edu,
-                inc_prj,
-                inc_lang,
-                None,
-                extra,
-                saved_contact,
-                saved_websites,
-                sum_text,
-                kw_list,
-                inc_bullets,
-                edu_overrides,
-                exp_overrides,
-            )
+            content = self._make_content(key)
             if content is None:
                 continue
             row = SectionRow(key, enabled.get(key, True), content)
             self._section_list.add_section(row)
 
-    def _make_content(
-        self,
-        key,
-        data,
-        inc_exp,
-        inc_edu,
-        inc_prj,
-        inc_lang,
-        sel_sum,
-        extra_kw_ids,
-        saved_contact=None,
-        saved_websites=None,
-        saved_sum_text=None,
-        saved_kw_list=None,
-        inc_bullets=None,
-        edu_overrides=None,
-        exp_overrides=None,
-    ):
+    def _make_content(self, key):
+        snap = self._snapshot
+        master = self._master
+
         if key == "contact":
-            contact = (
-                saved_contact
-                if saved_contact is not None
-                else (data.get("contact") or {})
-            )
-            websites = (
-                saved_websites
-                if saved_websites is not None
-                else (data.get("websites") or [])
-            )
-            all_websites = data.get("websites") or []
+            contact = snap.get("contact") or master.get("contact") or {}
+            websites = snap.get("websites") or []
+            all_websites = master.get("websites") or []
             w = _ContactContent(contact, websites, all_websites)
             w.changed.connect(self._on_change)
             return w
+
         if key == "summary":
             w = _SummaryContent(
                 self._all_profiles,
-                self.job_data["profile_id"],
-                saved_sum_text,
+                self.job_data.get("profile_id"),
+                snap.get("summary_text") or "",
             )
             w.changed.connect(self._on_change)
             return w
+
         if key == "experience":
-            all_experiences = data.get("experiences") or []
-            # When included_experiences is set, only show those selected experiences
-            # This handles the case when profile is NULL (deleted) and get_resume_data
-            # returns all experiences - we still want to respect the user's selection
-            if inc_exp is not None:
-                exp_map = {e["id"]: e for e in all_experiences}
-                selected_experiences = [
-                    exp_map[eid] for eid in inc_exp if eid in exp_map
-                ]
-            else:
-                selected_experiences = all_experiences
+            all_experiences = master.get("experiences") or []
+            inc_exp = [
+                e["source_experience_id"]
+                for e in snap.get("experiences") or []
+                if e.get("source_experience_id") is not None
+            ]
+            exp_overrides: dict[int, dict] = {}
+            bullet_overrides: dict[int, str] = {}
+            inc_bullets: dict[int, list[int]] = {}
+            for e in snap.get("experiences") or []:
+                src = e.get("source_experience_id")
+                if src is None:
+                    continue
+                exp_overrides[src] = {
+                    "organization_description": e.get("organization_description") or "",
+                    "organization_website": e.get("organization_website") or "",
+                }
+                ids = []
+                for b in e.get("bullet_points") or []:
+                    bsrc = b.get("source_bullet_id")
+                    if bsrc is None:
+                        continue
+                    ids.append(bsrc)
+                    bullet_overrides[bsrc] = b.get("text") or ""
+                inc_bullets[src] = ids
             w = _ExperienceContent(
-                selected_experiences,
+                all_experiences,
                 inc_exp,
-                self._bullet_overrides,
+                bullet_overrides,
                 inc_bullets,
                 exp_overrides,
             )
             w.changed.connect(self._on_change)
             return w
+
         if key == "education":
-            all_education = data.get("education") or []
-            if inc_edu is not None:
-                edu_map = {e["id"]: e for e in all_education}
-                selected_education = [edu_map[eid] for eid in inc_edu if eid in edu_map]
-            else:
-                selected_education = all_education
-            w = _EducationContent(selected_education, inc_edu, edu_overrides)
+            all_education = master.get("education") or []
+            inc_edu = [
+                e["source_education_id"]
+                for e in snap.get("education") or []
+                if e.get("source_education_id") is not None
+            ]
+            edu_overrides = {
+                e["source_education_id"]: {
+                    k: e.get(k)
+                    for k in (
+                        "degree", "school", "school_url", "location", "field",
+                        "gpa", "start_date", "end_date",
+                    )
+                    if e.get(k) is not None
+                }
+                for e in snap.get("education") or []
+                if e.get("source_education_id") is not None
+            }
+            w = _EducationContent(all_education, inc_edu, edu_overrides)
             w.changed.connect(self._on_change)
             return w
+
         if key == "languages":
-            all_languages = self.db.get_languages()
+            inc_lang = [
+                {
+                    "id": lang.get("source_language_id"),
+                    "name": lang.get("name", ""),
+                    "proficiency_level": lang.get("proficiency_level", ""),
+                }
+                for lang in snap.get("languages") or []
+            ]
             w = _LanguagesContent(
-                data.get("languages") or [],
+                master.get("languages") or [],
                 inc_lang,
-                all_languages,
+                self._all_languages_master,
             )
             w.changed.connect(self._on_change)
             return w
+
         if key == "projects":
-            all_projects = data.get("projects") or []
-            if inc_prj is not None:
-                prj_map = {p["id"]: p for p in all_projects}
-                selected_projects = [prj_map[pid] for pid in inc_prj if pid in prj_map]
-            else:
-                selected_projects = all_projects
-            w = _ProjectsContent(selected_projects, inc_prj)
+            all_projects = master.get("projects") or []
+            inc_prj = [
+                p["source_project_id"]
+                for p in snap.get("projects") or []
+                if p.get("source_project_id") is not None
+            ]
+            # Merge snapshot name/text into the master row so _ProjectItem displays
+            # the snapshot values; other fields stay master-sourced (not editable here).
+            snap_by_src = {
+                p["source_project_id"]: p
+                for p in snap.get("projects") or []
+                if p.get("source_project_id") is not None
+            }
+            projects_for_widget = []
+            for p in all_projects:
+                sp = snap_by_src.get(p["id"])
+                if sp is None:
+                    projects_for_widget.append(p)
+                else:
+                    projects_for_widget.append({
+                        **p,
+                        "name": sp.get("name") or p.get("name") or "",
+                        "text": sp.get("text") if sp.get("text") is not None else p.get("text"),
+                    })
+            w = _ProjectsContent(projects_for_widget, inc_prj)
             w.changed.connect(self._on_change)
             return w
+
         if key == "keywords":
-            if saved_kw_list is not None:
-                initial_ids = saved_kw_list
-            else:
-                seen = set()
-                initial_ids = []
-                for i in list(self._profile_kw_ids) + (extra_kw_ids or []):
-                    if i not in seen:
-                        seen.add(i)
-                        initial_ids.append(i)
+            initial_ids: list[int] = []
+            seen: set[int] = set()
+            for kw in snap.get("keywords") or []:
+                kid = self._kw_name_to_id.get(kw.get("name"))
+                if kid is not None and kid not in seen:
+                    seen.add(kid)
+                    initial_ids.append(kid)
             w = _KeywordsContent(self._all_kw, initial_ids)
             w.changed.connect(self._on_change)
             return w
+
         return None
 
     def _on_change(self):
@@ -1848,12 +1811,156 @@ class StepPreview(QWidget):
             else None,
             keyword_ids=kw_c.active_ids()
             if isinstance(kw_c, _KeywordsContent)
-            else list(self._profile_kw_ids),
+            else [],
             contact_override=contact_override,
             websites_override=websites_override,
             summary_text_override=sum_c.get_text_override()
             if isinstance(sum_c, _SummaryContent)
             else None,
+        )
+
+    def _state_to_snapshot(self, s: dict) -> dict:
+        """Translate widget outputs into a snapshot-shaped dict matching
+        Database.get_application_snapshot. Pickers operate on master rows by id,
+        so we look up master data (with snapshot as baseline) to fill in
+        non-editable fields.
+        """
+        snap = self._snapshot
+        master = self._master
+
+        snap_exp_map = {
+            e["source_experience_id"]: e
+            for e in snap.get("experiences") or []
+            if e.get("source_experience_id") is not None
+        }
+        master_exp_map = {e["id"]: e for e in master.get("experiences") or []}
+        experiences = []
+        for eid in s.get("included_experiences") or []:
+            snap_row = snap_exp_map.get(eid)
+            master_row = master_exp_map.get(eid, {})
+            baseline = snap_row or master_row
+            exp_ov = (s.get("experience_overrides") or {}).get(eid, {})
+            inc_bullet_ids = (s.get("included_bullets_map") or {}).get(eid, [])
+            snap_b_map = {
+                b["source_bullet_id"]: b
+                for b in (snap_row or {}).get("bullet_points") or []
+                if b.get("source_bullet_id") is not None
+            }
+            master_b_map = {b["id"]: b for b in master_row.get("bullet_points") or []}
+            bullet_ov = s.get("bullet_overrides") or {}
+            bullets = []
+            for bid in inc_bullet_ids:
+                if bid in bullet_ov:
+                    text = bullet_ov[bid]
+                else:
+                    text = (
+                        (snap_b_map.get(bid) or {}).get("text")
+                        or (master_b_map.get(bid) or {}).get("text")
+                        or ""
+                    )
+                bullets.append({"source_bullet_id": bid, "text": text})
+
+            def _pick(key):
+                if key in exp_ov:
+                    return exp_ov[key]
+                return baseline.get(key)
+
+            experiences.append({
+                "source_experience_id": eid,
+                "organization_name": baseline.get("organization_name") or "",
+                "position_name": baseline.get("position_name") or "",
+                "organization_description": _pick("organization_description"),
+                "organization_website": _pick("organization_website"),
+                "location": baseline.get("location"),
+                "is_ongoing": bool(baseline.get("is_ongoing")),
+                "start_date": baseline.get("start_date"),
+                "end_date": baseline.get("end_date"),
+                "bullets": bullets,
+            })
+
+        snap_edu_map = {
+            e["source_education_id"]: e
+            for e in snap.get("education") or []
+            if e.get("source_education_id") is not None
+        }
+        master_edu_map = {e["id"]: e for e in master.get("education") or []}
+        education = []
+        for eid in s.get("included_education") or []:
+            baseline = snap_edu_map.get(eid) or master_edu_map.get(eid, {})
+            edu_ov = (s.get("education_overrides") or {}).get(eid, {})
+
+            def _pick(key, default=None):
+                return edu_ov.get(key, baseline.get(key)) or default
+
+            education.append({
+                "source_education_id": eid,
+                "degree": _pick("degree", "") or "",
+                "school": _pick("school", "") or "",
+                "school_url": _pick("school_url"),
+                "location": _pick("location"),
+                "field": _pick("field"),
+                "gpa": _pick("gpa"),
+                "is_ongoing": bool(edu_ov.get("is_ongoing", baseline.get("is_ongoing"))),
+                "start_date": _pick("start_date"),
+                "end_date": _pick("end_date"),
+            })
+
+        snap_prj_map = {
+            p["source_project_id"]: p
+            for p in snap.get("projects") or []
+            if p.get("source_project_id") is not None
+        }
+        master_prj_map = {p["id"]: p for p in master.get("projects") or []}
+        projects = []
+        for pid in s.get("included_projects") or []:
+            baseline = snap_prj_map.get(pid) or master_prj_map.get(pid, {})
+            name = (s.get("project_name_overrides") or {}).get(pid, baseline.get("name") or "")
+            text_ov = s.get("project_text_overrides") or {}
+            text = text_ov[pid] if pid in text_ov else baseline.get("text")
+            projects.append({
+                "source_project_id": pid,
+                "name": name or "",
+                "link": baseline.get("link"),
+                "start_date": baseline.get("start_date"),
+                "end_date": baseline.get("end_date"),
+                "is_ongoing": bool(baseline.get("is_ongoing")),
+                "text": text,
+            })
+
+        languages = [
+            {
+                "source_language_id": lang.get("id"),
+                "name": lang.get("name") or "",
+                "proficiency_level": lang.get("proficiency_level") or "",
+            }
+            for lang in s.get("included_languages") or []
+        ]
+
+        kw_names: list[str] = []
+        seen_ids: set[int] = set()
+        id_to_kw = {kw["id"]: kw for kw in self._all_kw}
+        for kid in s.get("keyword_ids") or []:
+            if kid in id_to_kw and kid not in seen_ids:
+                seen_ids.add(kid)
+                kw_names.append(id_to_kw[kid]["name"])
+        keywords = [{"name": n} for n in kw_names]
+
+        section_order = s.get("section_order") or []
+        sections_enabled = {k: bool(v) for k, v in (s.get("sections_enabled") or {}).items()}
+
+        return dict(
+            contact=s.get("contact_override") or {},
+            websites=s.get("websites_override") or [],
+            summary_text=s.get("summary_text_override") or "",
+            experiences=experiences,
+            education=education,
+            projects=projects,
+            languages=languages,
+            keywords=keywords,
+            section_order=json.dumps(section_order),
+            sections_enabled=json.dumps({k: int(v) for k, v in sections_enabled.items()}),
+            settings=master.get("settings") or {},
+            template=master.get("template") or {},
         )
 
     def _regenerate(self):
@@ -1862,28 +1969,12 @@ class StepPreview(QWidget):
         self._is_processing = True
         self._regen_token += 1
         token = self._regen_token
-        s = self._get_state()
-        task = _Task(
-            generate_resume_pdf_for_app,
-            self.db_path,
-            self.job_data["profile_id"],
-            s["keyword_ids"],
-            s["section_order"],
-            s["sections_enabled"],
-            s["bullet_overrides"],
-            s["included_bullets_map"],
-            s["included_experiences"],
-            s["included_education"],
-            s["included_projects"],
-            s["included_languages"],
-            s["experience_overrides"],
-            s["education_overrides"],
-            s["project_text_overrides"],
-            s["project_name_overrides"],
-            s["contact_override"],
-            s["websites_override"],
-            s["summary_text_override"],
-        )
+        snapshot = self._state_to_snapshot(self._get_state())
+
+        def _render(_db_path, _snap):
+            return generate_resume_pdf_for_app(_db_path, snapshot=_snap)
+
+        task = _Task(_render, self.db_path, snapshot)
         self._active_tasks.add(task)
         task.sigs.done.connect(
             lambda pdf, t=token, tk=task: self._on_regen_done(pdf, t, tk)
@@ -1928,71 +2019,52 @@ class StepPreview(QWidget):
                 self._on_change()
 
     def _do_save(self):
-        """Perform the actual database save within a transaction."""
-        s = self._get_state()
+        """Fan the current state out into the application's snapshot tables."""
         jd = self.job_data
+        snapshot = self._state_to_snapshot(self._get_state())
 
-        # Use explicit transaction for atomicity
-        self.db._conn.execute("BEGIN")
-        try:
-            self.application_id = self.db.upsert_application(
-                profile_id=jd["profile_id"],
-                status_id=jd.get("status_id", 1),
-                position_name=jd["position_name"],
-                company_name=jd["company_name"],
-                date_applied=jd.get("date_applied", ""),
-                extra_keywords=json.dumps(s["keyword_ids"]),
-                section_order=json.dumps(s["section_order"]),
-                sections_enabled=json.dumps(
-                    {k: int(v) for k, v in s["sections_enabled"].items()}
-                ),
-                summary_text_override=s["summary_text_override"],
-                contact_override=json.dumps(s["contact_override"])
-                if s["contact_override"]
-                else None,
-                websites_override=json.dumps(s["websites_override"])
-                if s["websites_override"] is not None
-                else None,
-                included_experiences=json.dumps(s["included_experiences"])
-                if s["included_experiences"] is not None
-                else None,
-                included_education=json.dumps(s["included_education"])
-                if s["included_education"] is not None
-                else None,
-                included_projects=json.dumps(s["included_projects"])
-                if s["included_projects"] is not None
-                else None,
-                included_languages=json.dumps(s["included_languages"])
-                if s["included_languages"] is not None
-                else None,
-                included_bullets=json.dumps(s["included_bullets_map"])
-                if s["included_bullets_map"] is not None
-                else None,
-                education_overrides=json.dumps(
-                    {str(k): v for k, v in s["education_overrides"].items()}
-                )
-                if s["education_overrides"]
-                else None,
-                experience_overrides=json.dumps(
-                    {str(k): v for k, v in s["experience_overrides"].items()}
-                )
-                if s["experience_overrides"]
-                else None,
-                id=self.application_id,
-            )
-            # save the full explicit keyword list so reopening uses it directly
-            self.db._conn.execute(
-                "UPDATE job_application SET keyword_list=? WHERE id=?",
-                (json.dumps(s["keyword_ids"]), self.application_id),
-            )
-            self.db.clear_bullet_overrides(self.application_id)
-            for bp_id, text in s["bullet_overrides"].items():
-                self.db.set_bullet_override(self.application_id, bp_id, text)
-            self.db._conn.commit()
-        except Exception:
-            self.db._conn.rollback()
-            raise
+        self.application_id = self.db.upsert_application(
+            profile_id=jd.get("profile_id"),
+            status_id=jd.get("status_id", 1),
+            position_name=jd["position_name"],
+            company_name=jd["company_name"],
+            date_applied=jd.get("date_applied", ""),
+            id=self.application_id,
+        )
+        app_id = self.application_id
+        contact = snapshot["contact"]
+        self.db.update_application_contact(
+            app_id,
+            contact.get("name") or "",
+            contact.get("email") or "",
+            contact.get("phone") or "",
+            contact.get("location") or "",
+        )
+        self.db.replace_application_websites(
+            app_id,
+            [
+                {"label": w.get("label", ""), "url": w.get("url", "")}
+                for w in snapshot["websites"]
+            ],
+        )
+        self.db.update_application_summary(app_id, snapshot["summary_text"])
+        self.db.replace_application_experiences(app_id, snapshot["experiences"])
+        self.db.replace_application_education(app_id, snapshot["education"])
+        self.db.replace_application_projects(app_id, snapshot["projects"])
+        self.db.replace_application_languages(app_id, snapshot["languages"])
+        self.db.replace_application_keywords(
+            app_id, [k["name"] for k in snapshot["keywords"]]
+        )
+        self.db.update_application_layout(
+            app_id, snapshot["section_order"], snapshot["sections_enabled"]
+        )
+        self.db.execute(
+            "UPDATE job_application SET date_last_updated=? WHERE id=?",
+            (date.today().strftime("%Y-%m-%d"), app_id),
+        )
 
+        # Refresh our in-memory snapshot so subsequent regen/reads reflect saved state
+        self._snapshot = self.db.get_application_snapshot(self.application_id)
         self.saved.emit(self.application_id)
         self._status_lbl.setText("Saved")
 
