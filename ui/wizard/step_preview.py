@@ -1875,7 +1875,7 @@ class StepPreview(QWidget):
                 "is_ongoing": bool(baseline.get("is_ongoing")),
                 "start_date": baseline.get("start_date"),
                 "end_date": baseline.get("end_date"),
-                "bullets": bullets,
+                "bullet_points": bullets,
             })
 
         snap_edu_map = {

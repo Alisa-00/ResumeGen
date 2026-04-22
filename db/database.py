@@ -709,7 +709,7 @@ class Database:
                 "is_ongoing": bool(_pick("is_ongoing")),
                 "start_date": _pick("start_date"),
                 "end_date": _pick("end_date"),
-                "bullets": [
+                "bullet_points": [
                     {"source_bullet_id": b["id"], "text": b["text"]}
                     for b in matched
                 ],
@@ -1608,7 +1608,7 @@ class Database:
                 "is_ongoing": bool(job.get("is_ongoing")),
                 "start_date": job.get("start_date"),
                 "end_date": job.get("end_date"),
-                "bullets": [
+                "bullet_points": [
                     {
                         "source_bullet_id": b["id"],
                         "text": b.get("text", ""),
@@ -1827,7 +1827,7 @@ class Database:
                     ),
                 )
                 ae_id = cur.lastrowid
-                for j, b in enumerate(e.get("bullets") or []):
+                for j, b in enumerate(e.get("bullet_points") or []):
                     self.conn.execute(
                         """INSERT INTO application_bullet
                            (application_experience_id, source_bullet_id, sort_order, text)
