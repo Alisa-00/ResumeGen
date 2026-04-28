@@ -564,15 +564,11 @@ class _SummaryContent(QWidget):
             chosen_btn = self._group.buttons()[0]
 
         if chosen_btn:
-            initial = (
-                saved_text_override
-                if saved_text_override is not None
-                else chosen_btn.property("summary_text")
-            )
-            self._edit.blockSignals(True)
-            self._edit.setPlainText(initial)
-            self._edit.blockSignals(False)
             chosen_btn.setChecked(True)
+            if saved_text_override is not None:
+                self._edit.blockSignals(True)
+                self._edit.setPlainText(saved_text_override)
+                self._edit.blockSignals(False)
 
     def _on_radio_toggled(self, btn, checked: bool):
         if not checked:
