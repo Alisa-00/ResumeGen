@@ -1978,6 +1978,8 @@ class StepPreview(QWidget):
                 )
                 if s["experience_overrides"]
                 else None,
+                job_posting_url=jd.get("job_posting_url"),
+                job_posting_description=jd.get("job_posting_description"),
                 id=self.application_id,
             )
             # save the full explicit keyword list so reopening uses it directly
