@@ -7,7 +7,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 
 from db.database import Database
 from ui.ui import AppWindow
@@ -21,12 +21,15 @@ def resolve_db_path() -> Path | None:
         if stored:
             return Path(stored)
 
-    QMessageBox.information(
-        None,
-        "Welcome to Resume Orchestrator",
-        "Choose a folder where your resume database will be stored.\n"
-        "Tip: put it inside Dropbox / iCloud Drive for automatic sync.",
-    )
+    parent = QWidget()
+
+    msg = QMessageBox(parent)
+    msg.setIcon(QMessageBox.Information)
+    msg.setWindowTitle("Welcome to Resume Orchestrator")
+    msg.setText("Choose a folder where your resume database will be stored.")
+    msg.setInformativeText("Tip: put it inside Dropbox / iCloud Drive for automatic sync.")
+    msg.exec()
+
     folder = QFileDialog.getExistingDirectory(
         None, "Select storage folder", str(Path.home())
     )
