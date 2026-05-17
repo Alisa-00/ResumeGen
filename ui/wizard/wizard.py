@@ -75,8 +75,7 @@ class WizardWidget(QWidget):
             status_id=status_id,
             position_name=job_data["position_name"],
             company_name=job_data["company_name"],
-            date_applied=job_data.get("date_applied")
-            or date.today().strftime("%Y-%m-%d"),
+            date_applied=job_data.get("date_applied"),
             extra_keywords=json.dumps(job_data.get("extra_kw_ids", [])),
             job_posting_url=job_data.get("job_posting_url", ""),
             id=self.application_id,

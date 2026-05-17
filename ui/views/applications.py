@@ -220,7 +220,7 @@ class _ColumnList(QListWidget):
                     source.takeItem(i)
                     break
 
-            super().dropEvent(event)
+            event.acceptProposedAction()
             self._drag_state["source"] = None
             self._drag_state["app_id"] = None
             self.card_dropped.emit(app_id, self.status_key)
@@ -998,24 +998,12 @@ class ApplicationsView(QWidget):
         if not new_status_id:
             return
 
-        # ALWAYS update date_last_updated on every status change
         if new_status_key == "applied":
-            # Get current application to check if date_applied already exists
-            current_app = self.db.get_application(app_id)
-            if current_app and not current_app.get("date_applied"):
-                # No existing date_applied, set it now along with last_updated
-                self.db.execute(
-                    "UPDATE job_application SET status_id=?, date_applied=?, date_last_updated=? WHERE id=?",
-                    (new_status_id, today, today, app_id),
-                )
-            else:
-                # date_applied already exists - leave it as-is, only update status and date_last_updated
-                self.db.execute(
-                    "UPDATE job_application SET status_id=?, date_last_updated=? WHERE id=?",
-                    (new_status_id, today, app_id),
-                )
+            self.db.execute(
+                "UPDATE job_application SET status_id=?, date_applied=?, date_last_updated=? WHERE id=?",
+                (new_status_id, today, today, app_id),
+            )
         else:
-            # Not moving to "applied", update status and date_last_updated only
             self.db.execute(
                 "UPDATE job_application SET status_id=?, date_last_updated=? WHERE id=?",
                 (new_status_id, today, app_id),
