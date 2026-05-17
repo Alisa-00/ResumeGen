@@ -50,23 +50,21 @@ class _LanguageRow(QWidget):
         root.setContentsMargins(0, 4, 0, 4)
         root.setSpacing(8)
 
-        # Up / down reorder buttons
-        self._up_btn = QPushButton("▲")
-        self._up_btn.setFixedSize(24, 24)
-        self._up_btn.setFlat(True)
-        self._up_btn.setStyleSheet(
-            "QPushButton { color: #cdd6f4; background: transparent; border: none; font-size: 11px; }"
-            "QPushButton:hover { color: #89b4fa; }"
+        _arrow_style = (
+            "QPushButton { font-size: 22px; color: #89b4fa;"
+            " background-color: #313244; border-radius: 6px; border: none;"
+            " min-height: 0; min-width: 0; }"
+            "QPushButton:hover { background-color: #45475a; }"
         )
+
+        self._up_btn = QPushButton("▲")
+        self._up_btn.setFixedSize(48, 48)
+        self._up_btn.setStyleSheet(_arrow_style)
         self._up_btn.clicked.connect(lambda: self.moved_up.emit(self))
 
         self._down_btn = QPushButton("▼")
-        self._down_btn.setFixedSize(24, 24)
-        self._down_btn.setFlat(True)
-        self._down_btn.setStyleSheet(
-            "QPushButton { color: #cdd6f4; background: transparent; border: none; font-size: 11px; }"
-            "QPushButton:hover { color: #89b4fa; }"
-        )
+        self._down_btn.setFixedSize(48, 48)
+        self._down_btn.setStyleSheet(_arrow_style)
         self._down_btn.clicked.connect(lambda: self.moved_down.emit(self))
 
         # Language name field
