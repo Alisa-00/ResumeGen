@@ -282,6 +282,7 @@ class Database:
             ("job_application", "included_languages", "TEXT"),
             ("job_application", "date_created", "TEXT"),
             ("job_application", "date_last_updated", "TEXT"),
+            ("language", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -738,24 +739,22 @@ class Database:
     # ------------------------------------------------------------------
 
     def get_languages(self) -> list[dict]:
-        return self.fetch_all("SELECT * FROM language ORDER BY name")
+        return self.fetch_all("SELECT * FROM language ORDER BY sort_order, name")
 
     def upsert_language(
-        self, name: str, proficiency_level: str, id: int | None = None
+        self, name: str, proficiency_level: str, id: int | None = None, sort_order: int = 0
     ) -> int:
         if id:
             self.execute(
-                "UPDATE language SET name=?, proficiency_level=? WHERE id=?",
-                (name, proficiency_level, id),
+                "UPDATE language SET name=?, proficiency_level=?, sort_order=? WHERE id=?",
+                (name, proficiency_level, sort_order, id),
             )
             return id
-        # Use INSERT OR REPLACE to handle unique constraint on name
-        # This updates proficiency_level if language with this name already exists
         return self.execute(
-            """INSERT INTO language (name, proficiency_level)
-               VALUES (?,?)
-               ON CONFLICT(name) DO UPDATE SET proficiency_level=excluded.proficiency_level""",
-            (name, proficiency_level),
+            """INSERT INTO language (name, proficiency_level, sort_order)
+               VALUES (?,?,?)
+               ON CONFLICT(name) DO UPDATE SET proficiency_level=excluded.proficiency_level, sort_order=excluded.sort_order""",
+            (name, proficiency_level, sort_order),
         )
 
     def delete_language(self, id: int) -> None:
