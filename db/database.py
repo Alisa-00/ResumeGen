@@ -283,6 +283,7 @@ class Database:
             ("job_application", "date_created", "TEXT"),
             ("job_application", "date_last_updated", "TEXT"),
             ("language", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
+            ("job_application", "snapshot", "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -303,6 +304,36 @@ class Database:
                 raise RuntimeError(
                     f"[MIGRATE] Database error adding {table}.{column}: {e}"
                 ) from e
+
+        self._backfill_snapshots()
+
+    def _backfill_snapshots(self) -> None:
+        """Populate job_application.snapshot for any row that doesn't yet
+        have one. Idempotent: rows with a non-null snapshot are skipped."""
+        # Lazy import to avoid a database <-> snapshot circular import.
+        import json as _json
+        from resume.snapshot import legacy_to_snapshot
+
+        rows = self.fetch_all(
+            "SELECT * FROM job_application WHERE snapshot IS NULL OR snapshot=''"
+        )
+        if not rows:
+            return
+        for row in rows:
+            try:
+                snap = legacy_to_snapshot(self, row)
+                self._conn.execute(
+                    "UPDATE job_application SET snapshot=? WHERE id=?",
+                    (_json.dumps(snap), row["id"]),
+                )
+            except Exception as e:  # noqa: BLE001
+                # Don't abort startup if one row fails — log + continue.
+                print(
+                    f"[MIGRATE] snapshot backfill failed for application "
+                    f"id={row.get('id')}: {e}"
+                )
+        self._conn.commit()
+        print(f"[MIGRATE] Backfilled {len(rows)} application snapshot(s)")
 
     # ------------------------------------------------------------------
     # helpers
@@ -884,28 +915,20 @@ class Database:
         status_id: int,
         position_name: str,
         company_name: str,
-        date_applied: str,
-        extra_keywords: str = "[]",
-        section_order: str | None = None,
-        sections_enabled: str | None = None,
-        resume_pdf_path: str | None = None,
-        selected_summary_id: int | None = None,
-        summary_text_override: str | None = None,
-        contact_override: str | None = None,
-        websites_override: str | None = None,
-        experience_overrides: str | None = None,
-        included_experiences: str | None = None,
-        included_education: str | None = None,
-        included_projects: str | None = None,
-        included_bullets: str | None = None,
-        education_overrides: str | None = None,
+        date_applied: str | None = None,
         job_posting_url: str | None = None,
         job_posting_description: str | None = None,
-        included_languages: str | None = None,
+        resume_pdf_path: str | None = None,
+        snapshot: str | None = None,
         id: int | None = None,
         date_created: str | None = None,
         date_last_updated: str | None = None,
     ) -> int:
+        """Insert or update an application row.
+
+        The snapshot column carries the full document. All legacy override
+        columns are written as NULL on insert and left untouched on update.
+        """
         from datetime import date as _date
 
         today = _date.today().strftime("%Y-%m-%d")
@@ -913,87 +936,58 @@ class Database:
             date_last_updated = today
 
         if id:
-            self.execute(
-                """UPDATE job_application SET
-                   profile_id=?, status_id=?, position_name=?, company_name=?,
-                   date_applied=?, date_last_updated=?, extra_keywords=?, section_order=?,
-                   sections_enabled=?, resume_pdf_path=?,
-                   selected_summary_id=?, summary_text_override=?,
-                   contact_override=?, websites_override=?, experience_overrides=?,
-                   included_experiences=?, included_education=?,
-                   included_projects=?, included_bullets=?,
-                   education_overrides=?, job_posting_url=?, job_posting_description=?,
-                   included_languages=?
-                   WHERE id=?""",
-                (
-                    profile_id,
-                    status_id,
-                    position_name,
-                    company_name,
-                    date_applied,
-                    date_last_updated,
-                    extra_keywords,
-                    section_order,
-                    sections_enabled,
-                    resume_pdf_path,
-                    selected_summary_id,
-                    summary_text_override,
-                    contact_override,
-                    websites_override,
-                    experience_overrides,
-                    included_experiences,
-                    included_education,
-                    included_projects,
-                    included_bullets,
-                    education_overrides,
-                    job_posting_url,
-                    job_posting_description,
-                    included_languages,
-                    id,
-                ),
-            )
+            # Only update lifecycle + snapshot. Snapshot updates only when a
+            # value is provided (lets the small "edit company/URL" dialog
+            # touch metadata without rewriting the document).
+            if snapshot is not None:
+                self.execute(
+                    """UPDATE job_application SET
+                       profile_id=?, status_id=?, position_name=?, company_name=?,
+                       date_applied=?, date_last_updated=?,
+                       job_posting_url=?, job_posting_description=?,
+                       resume_pdf_path=COALESCE(?, resume_pdf_path),
+                       snapshot=?
+                       WHERE id=?""",
+                    (
+                        profile_id, status_id, position_name, company_name,
+                        date_applied, date_last_updated,
+                        job_posting_url, job_posting_description,
+                        resume_pdf_path, snapshot, id,
+                    ),
+                )
+            else:
+                self.execute(
+                    """UPDATE job_application SET
+                       profile_id=?, status_id=?, position_name=?, company_name=?,
+                       date_applied=?, date_last_updated=?,
+                       job_posting_url=?, job_posting_description=?,
+                       resume_pdf_path=COALESCE(?, resume_pdf_path)
+                       WHERE id=?""",
+                    (
+                        profile_id, status_id, position_name, company_name,
+                        date_applied, date_last_updated,
+                        job_posting_url, job_posting_description,
+                        resume_pdf_path, id,
+                    ),
+                )
             return id
+
         if date_created is None:
-            date_created = _date.today().strftime("%Y-%m-%d")
+            date_created = today
         return self.execute(
             """INSERT INTO job_application
                (profile_id, status_id, position_name, company_name,
-                date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
-                resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
-                contact_override, websites_override, experience_overrides,
-                included_experiences, included_education, included_projects, included_languages,
-                job_posting_url, job_posting_description)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            # 23 columns: profile_id, status_id, position_name, company_name,
-            #   date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
-            #   resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
-            #   contact_override, websites_override, experience_overrides,
-            #   included_experiences, included_education, included_projects, included_languages,
-            #   job_posting_url, job_posting_description
-            (
-                profile_id,
-                status_id,
-                position_name,
-                company_name,
-                date_created,
-                date_applied,
-                date_last_updated,
+                date_created, date_applied, date_last_updated,
                 extra_keywords,
-                section_order,
-                sections_enabled,
-                resume_pdf_path,
-                None,  # keyword_list - not exposed as parameter
-                selected_summary_id,
-                summary_text_override,
-                contact_override,
-                websites_override,
-                experience_overrides,
-                included_experiences,
-                included_education,
-                included_projects,
-                included_languages,
-                job_posting_url,
-                job_posting_description,
+                job_posting_url, job_posting_description,
+                resume_pdf_path, snapshot)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                profile_id, status_id, position_name, company_name,
+                date_created, date_applied, date_last_updated,
+                "[]",
+                job_posting_url, job_posting_description,
+                resume_pdf_path, snapshot,
             ),
         )
 
@@ -1069,25 +1063,10 @@ class Database:
     # ------------------------------------------------------------------
 
     def get_bullet_overrides(self, application_id: int) -> dict[int, str]:
+        """Read legacy per-bullet override rows. Used by snapshot migration only;
+        the new snapshot stores bullet text inline."""
         rows = self.fetch_all(
             "SELECT bullet_point_id, text FROM application_bullet_override WHERE application_id=?",
             (application_id,),
         )
         return {r["bullet_point_id"]: r["text"] for r in rows}
-
-    def set_bullet_override(
-        self, application_id: int, bullet_point_id: int, text: str
-    ) -> None:
-        self.execute(
-            """INSERT INTO application_bullet_override (application_id, bullet_point_id, text)
-               VALUES (?,?,?)
-               ON CONFLICT(application_id, bullet_point_id)
-               DO UPDATE SET text=excluded.text""",
-            (application_id, bullet_point_id, text),
-        )
-
-    def clear_bullet_overrides(self, application_id: int) -> None:
-        self.execute(
-            "DELETE FROM application_bullet_override WHERE application_id=?",
-            (application_id,),
-        )

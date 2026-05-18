@@ -1,22 +1,24 @@
 """
 ui/wizard/wizard.py
 Two-step application wizard.
-Step 1: job details form.
-Step 2: live resume editor + PDF preview.
 
-The application is auto-saved to the DB when entering step 2.
-The back button on step 2 closes the wizard entirely (goes to Applications view).
+Step 1: job details form.
+Step 2: live resume editor + PDF preview, driven by a snapshot dict.
+
+A snapshot is created from the master profile when a new application is
+made (`build_snapshot_from_profile`). For existing applications the snapshot
+column is loaded as-is.
 """
 
 from __future__ import annotations
 import json
-from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QStackedWidget, QVBoxLayout
 
 from db.database import Database
+from resume.snapshot import build_snapshot_from_profile
 from ui.wizard.step_details import StepDetails
 from ui.wizard.step_preview import StepPreview
 
@@ -46,29 +48,46 @@ class WizardWidget(QWidget):
         self._step1.next_requested.connect(self._on_next)
         self._stack.addWidget(self._step1)
 
-        # if reopening an existing application go straight to step 2
         if existing:
+            snapshot = self._load_or_build_snapshot(existing)
             job_data = {
-                "company_name": existing["company_name"],
-                "position_name": existing["position_name"],
-                "profile_id": existing["profile_id"],
-                "status_id": existing["status_id"],
-                "date_applied": existing.get("date_applied", ""),
-                "extra_kw_ids": json.loads(existing.get("extra_keywords", "[]")),
-                "job_posting_url": existing.get("job_posting_url", ""),
+                "company_name":     existing["company_name"],
+                "position_name":    existing["position_name"],
+                "profile_id":       existing["profile_id"],
+                "status_id":        existing["status_id"],
+                "date_applied":     existing.get("date_applied", ""),
+                "job_posting_url":  existing.get("job_posting_url", ""),
+                "job_posting_description": existing.get("job_posting_description", ""),
             }
-            self._build_step2(job_data)
+            self._build_step2(job_data, snapshot)
             self._stack.setCurrentIndex(1)
 
     # ------------------------------------------------------------------
 
+    def _load_or_build_snapshot(self, app_row: dict) -> dict:
+        raw = app_row.get("snapshot")
+        if raw:
+            try:
+                return json.loads(raw)
+            except (TypeError, ValueError):
+                pass
+        # Last-ditch fallback (should never happen after _migrate's backfill).
+        from resume.snapshot import legacy_to_snapshot
+        return legacy_to_snapshot(self.db, app_row)
+
     def _on_next(self, job_data: dict):
-        """Called from step 1. Auto-saves the application, then shows step 2."""
+        """Called from step 1. Builds a snapshot from the chosen profile,
+        creates the application row, then opens step 2."""
         statuses = {s["status"]: s["id"] for s in self.db.get_statuses()}
         status_id = statuses.get("to-apply", 1)
 
-        # Extract referrals before saving (they're not stored in job_application table)
         referrals = job_data.pop("referrals", [])
+
+        snapshot = build_snapshot_from_profile(
+            self.db,
+            job_data["profile_id"],
+            job_data.get("extra_kw_ids") or [],
+        )
 
         self.application_id = self.db.upsert_application(
             profile_id=job_data["profile_id"],
@@ -76,13 +95,12 @@ class WizardWidget(QWidget):
             position_name=job_data["position_name"],
             company_name=job_data["company_name"],
             date_applied=job_data.get("date_applied"),
-            extra_keywords=json.dumps(job_data.get("extra_kw_ids", [])),
             job_posting_url=job_data.get("job_posting_url", ""),
+            snapshot=json.dumps(snapshot),
             id=self.application_id,
         )
         job_data["status_id"] = status_id
 
-        # Save referrals now that we have the application_id
         for ref in referrals:
             self.db.add_application_referral(
                 application_id=self.application_id,
@@ -93,10 +111,10 @@ class WizardWidget(QWidget):
                 description=ref.get("description"),
             )
 
-        self._build_step2(job_data)
+        self._build_step2(job_data, snapshot)
         self._stack.setCurrentIndex(1)
 
-    def _build_step2(self, job_data: dict):
+    def _build_step2(self, job_data: dict, snapshot: dict):
         if self._stack.count() > 1:
             old = self._stack.widget(1)
             self._stack.removeWidget(old)
@@ -106,6 +124,7 @@ class WizardWidget(QWidget):
             db=self.db,
             db_path=self.db_path,
             job_data=job_data,
+            snapshot=snapshot,
             application_id=self.application_id,
         )
         step2.back_requested.connect(self.closed)
