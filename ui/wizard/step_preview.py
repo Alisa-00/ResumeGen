@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QCheckBox,
     QButtonGroup,
     QRadioButton,
     QScrollArea,
@@ -34,7 +33,7 @@ from PySide6.QtWidgets import (
 
 from db.database import Database
 from pdf.display import PdfPreviewWidget
-from ui.widgets import primary_btn, flat_link_btn, small_danger_btn
+from ui.widgets import primary_btn, flat_link_btn, small_danger_btn, check_box
 
 SECTION_LABELS = {
     "contact": "Contact",
@@ -1356,7 +1355,7 @@ class SectionRow(QWidget):
         lbl.setStyleSheet("font-size: 20px; color: #cdd6f4;")
         hl.addWidget(lbl, 1)
 
-        self.checkbox = QCheckBox()
+        self.checkbox = check_box()
         self.checkbox.setChecked(enabled)
         self.checkbox.setStyleSheet("QCheckBox { border: none; }")
         hl.addWidget(self.checkbox)

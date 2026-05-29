@@ -30,7 +30,7 @@ class PdfPreviewWidget(QWidget):
 
         self._placeholder = QLabel("No preview yet.\nGenerate a resume to see it here.")
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._placeholder.setStyleSheet("color: grey; font-size: 14px;")
+        self._placeholder.setStyleSheet("color: #585b70; font-size: 14px;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
