@@ -176,9 +176,6 @@ def main():
             background-color: #1e1e2e;
             border: none;
         }
-        QFrame {
-            color: #313244;
-        }
         QScrollBar:vertical {
             background-color: #181825;
             width: 16px;

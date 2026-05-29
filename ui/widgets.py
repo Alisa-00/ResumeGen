@@ -30,6 +30,10 @@ def hline() -> QFrame:
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     f.setFrameShadow(QFrame.Shadow.Sunken)
+    # Colour the separator locally. A global `QFrame { color }` rule would also
+    # recolour every QLabel/QTextEdit (both are QFrame subclasses), so the colour
+    # must stay scoped to the separator itself.
+    f.setStyleSheet("color: #313244;")
     return f
 
 
