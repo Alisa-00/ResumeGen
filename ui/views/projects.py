@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QCheckBox, QTextEdit, QLabel, QMessageBox,
+    QPushButton, QTextEdit, QLabel, QMessageBox,
 )
 
 from db.database import Database

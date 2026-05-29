@@ -46,10 +46,35 @@ def main():
     app.setApplicationName("Resume Orchestrator")
 
     # scale UI to ~2.5x by setting base font size
-    from PySide6.QtGui import QFont
+    from PySide6.QtGui import QFont, QPalette, QColor
     font = QFont()
     font.setPointSize(22)
     app.setFont(font)
+
+    # dark palette — the fallback widgets use when neither their own nor the
+    # application stylesheet sets a color (e.g. QFormLayout labels, input text).
+    # Qt prefers a styled ancestor's stylesheet over the app stylesheet, so
+    # those widgets would otherwise fall back to the OS palette (light on some
+    # systems). Setting the palette fixes default text/background app-wide.
+    pal = QPalette()
+    pal.setColor(QPalette.ColorRole.Window,          QColor("#1e1e2e"))
+    pal.setColor(QPalette.ColorRole.WindowText,      QColor("#cdd6f4"))
+    pal.setColor(QPalette.ColorRole.Base,            QColor("#141618"))
+    pal.setColor(QPalette.ColorRole.AlternateBase,   QColor("#181825"))
+    pal.setColor(QPalette.ColorRole.Text,            QColor("#cdd6f4"))
+    pal.setColor(QPalette.ColorRole.Button,          QColor("#313244"))
+    pal.setColor(QPalette.ColorRole.ButtonText,      QColor("#cdd6f4"))
+    pal.setColor(QPalette.ColorRole.BrightText,      QColor("#f38ba8"))
+    pal.setColor(QPalette.ColorRole.PlaceholderText, QColor("#585b70"))
+    pal.setColor(QPalette.ColorRole.Highlight,       QColor("#89b4fa"))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#1e1e2e"))
+    pal.setColor(QPalette.ColorRole.ToolTipBase,     QColor("#313244"))
+    pal.setColor(QPalette.ColorRole.ToolTipText,     QColor("#cdd6f4"))
+    pal.setColor(QPalette.ColorRole.Link,            QColor("#89b4fa"))
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text,
+                 QPalette.ColorRole.ButtonText):
+        pal.setColor(QPalette.ColorGroup.Disabled, role, QColor("#585b70"))
+    app.setPalette(pal)
 
     # global stylesheet scaling — margins, padding, widget sizes
     app.setStyleSheet("""

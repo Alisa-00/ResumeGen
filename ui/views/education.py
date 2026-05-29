@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QFormLayout,
     QPushButton,
-    QCheckBox,
     QMessageBox,
 )
 
