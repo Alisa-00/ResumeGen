@@ -54,48 +54,144 @@ def main():
     # global stylesheet scaling — margins, padding, widget sizes
     app.setStyleSheet("""
         QWidget {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
             font-size: 22px;
         }
-        QLineEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+        QLabel {
+            background-color: transparent;
+            color: #cdd6f4;
+            font-size: 22px;
+        }
+        QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+            background-color: #141618;
+            color: #cdd6f4;
+            border: 1px solid #313244;
+            border-radius: 4px;
             min-height: 42px;
             padding: 4px 8px;
             font-size: 22px;
+            selection-background-color: #89b4fa;
+            selection-color: #1e1e2e;
+        }
+        QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,
+        QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+            border: 1px solid #89b4fa;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            border: 1px solid #313244;
+            selection-background-color: #313244;
+            selection-color: #cdd6f4;
         }
         QPushButton {
+            background-color: #313244;
+            color: #cdd6f4;
+            border: none;
+            border-radius: 4px;
             min-height: 38px;
             padding: 4px 14px;
             font-size: 22px;
         }
+        QPushButton:hover {
+            background-color: #45475a;
+        }
+        QPushButton:flat {
+            background-color: transparent;
+        }
         QCheckBox {
+            background-color: transparent;
+            color: #cdd6f4;
             font-size: 22px;
             spacing: 10px;
         }
         QCheckBox::indicator {
             width: 20px;
             height: 20px;
+            background-color: #141618;
+            border: 1px solid #585b70;
+            border-radius: 3px;
+        }
+        QCheckBox::indicator:checked {
+            background-color: #89b4fa;
+            border: 1px solid #89b4fa;
         }
         QRadioButton {
+            background-color: transparent;
+            color: #cdd6f4;
             font-size: 22px;
             spacing: 10px;
         }
         QRadioButton::indicator {
             width: 20px;
             height: 20px;
+            background-color: #141618;
+            border: 1px solid #585b70;
+            border-radius: 10px;
+        }
+        QRadioButton::indicator:checked {
+            background-color: #89b4fa;
+            border: 1px solid #89b4fa;
+        }
+        QListWidget {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            border: none;
         }
         QListWidget::item {
             padding: 18px 20px;
             font-size: 22px;
         }
-        QLabel {
-            font-size: 22px;
+        QListWidget::item:selected {
+            background-color: #313244;
+            color: #89b4fa;
+        }
+        QScrollArea {
+            background-color: #1e1e2e;
+            border: none;
+        }
+        QFrame {
+            color: #313244;
         }
         QScrollBar:vertical {
+            background-color: #181825;
             width: 16px;
+            margin: 0;
         }
         QScrollBar:horizontal {
+            background-color: #181825;
             height: 16px;
+            margin: 0;
+        }
+        QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+            background-color: #45475a;
+            border-radius: 6px;
+        }
+        QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
+            background-color: #585b70;
+        }
+        QScrollBar::add-line, QScrollBar::sub-line {
+            width: 0; height: 0; border: none; background: none;
+        }
+        QScrollBar::add-page, QScrollBar::sub-page {
+            background: none;
+        }
+        QSplitter::handle {
+            background-color: #313244;
+        }
+        QMessageBox, QDialog {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+        }
+        QToolTip {
+            background-color: #313244;
+            color: #cdd6f4;
+            border: 1px solid #45475a;
         }
         QHeaderView::section {
+            background-color: #313244;
+            color: #cdd6f4;
             font-size: 22px;
             padding: 8px;
         }

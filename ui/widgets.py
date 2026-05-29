@@ -345,5 +345,5 @@ class PlaceholderView(QWidget):
         super().__init__(parent)
         lbl = QLabel(f"[ {label} — coming soon ]")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setStyleSheet("color: grey; font-size: 16px;")
+        lbl.setStyleSheet("color: #585b70; font-size: 16px;")
         QVBoxLayout(self).addWidget(lbl)
