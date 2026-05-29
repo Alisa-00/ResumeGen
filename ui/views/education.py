@@ -19,6 +19,7 @@ from ui.widgets import (
     field,
     date_field,
     scrollable,
+    check_box,
     Card,
 )
 
@@ -81,7 +82,7 @@ class EducationView(QWidget):
         f_gpa = field("GPA / Score", (data or {}).get("gpa", ""))
         f_start = date_field((data or {}).get("start_date", ""))
         f_end = date_field((data or {}).get("end_date", ""))
-        f_ongoing = QCheckBox("Currently ongoing")
+        f_ongoing = check_box("Currently ongoing")
         f_ongoing.setChecked(bool((data or {}).get("is_ongoing", False)))
         f_ongoing.toggled.connect(lambda checked: f_end.setDisabled(checked))
         f_end.setDisabled(f_ongoing.isChecked())

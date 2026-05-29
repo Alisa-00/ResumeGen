@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from db.database import Database
 from ui.widgets import (
     section_title, hline, primary_btn, flat_link_btn,
-    field, date_field, scrollable, Card, KeywordTagger,
+    field, date_field, scrollable, check_box, Card, KeywordTagger,
 )
 
 
@@ -67,7 +67,7 @@ class ProjectsView(QWidget):
         f_link    = field("URL / repo",   (data or {}).get("link", ""))
         f_start   = date_field((data or {}).get("start_date", ""))
         f_end     = date_field((data or {}).get("end_date", ""))
-        f_ongoing = QCheckBox("Currently ongoing")
+        f_ongoing = check_box("Currently ongoing")
         f_ongoing.setChecked(bool((data or {}).get("is_ongoing", False)))
         f_ongoing.toggled.connect(lambda checked: f_end.setDisabled(checked))
         f_end.setDisabled(f_ongoing.isChecked())
