@@ -20,9 +20,15 @@ env/
 *.db
 *.db-wal
 *.db-shm
+*.db.bak-*
+*.db.incoming
 
 # Config
 .resume_orchestrator
+.resume_orchestrator_sync.json
+
+# Rust / SpacetimeDB module build output
+server/target/
 
 # PDFs
 *.pdf

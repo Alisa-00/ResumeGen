@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 
 from db.database import Database
 from ui.widgets import section_title, hline, primary_btn, field, check_box
+from sync.config import SyncConfig
+from version import APP_VERSION, version_str
 
 DATE_FORMAT_OPTIONS: list[tuple[str, str]] = [
     ("YYYY", "Year only (2020)"),
@@ -119,9 +121,10 @@ class SectionOrderWidget(QWidget):
 
 
 class SettingsView(QWidget):
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, window=None, parent=None):
         super().__init__(parent)
         self.db = db
+        self.window_ = window  # AppWindow, for triggering background sync
 
         settings = self.db.get_settings() or {}
 
@@ -213,7 +216,98 @@ class SettingsView(QWidget):
         save_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         save_btn.clicked.connect(self._save)
         outer.addWidget(save_btn)
+
+        self._build_sync_section(outer)
         outer.addStretch()
+
+    # ── sync ──────────────────────────────────────────────────────────
+
+    def _build_sync_section(self, outer: QVBoxLayout):
+        """Sync config is stored OUTSIDE the database (SyncConfig), so it is
+        edited here directly rather than through db.save_settings()."""
+        # share the engine's live config object when available so changes here
+        # are immediately seen by background sync
+        engine = getattr(self.window_, "engine", None)
+        self._sync_cfg: SyncConfig = engine.cfg if engine else SyncConfig.load()
+
+        outer.addSpacing(4)
+        outer.addWidget(hline())
+        outer.addWidget(section_title("Sync"))
+
+        info = QLabel(
+            "Sync uploads a snapshot of your whole database to a central "
+            "SpacetimeDB server and pulls the latest compatible snapshot. It is "
+            "optional — the app works fully offline. Latest-write-wins."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #a6adc8;")
+        outer.addWidget(info)
+
+        self._sync_enabled = check_box("Enable sync")
+        self._sync_enabled.setChecked(self._sync_cfg.sync_enabled)
+        outer.addWidget(self._sync_enabled)
+
+        outer.addWidget(QLabel("Sync server URL  (e.g. https://maincloud.spacetimedb.com)"))
+        self._sync_url = field("https://…")
+        self._sync_url.setText(self._sync_cfg.server_url)
+        outer.addWidget(self._sync_url)
+
+        outer.addWidget(QLabel("Module / database name"))
+        self._sync_module = field("my-resume-sync")
+        self._sync_module.setText(self._sync_cfg.module_name)
+        outer.addWidget(self._sync_module)
+
+        outer.addWidget(QLabel("Identity token  (from `spacetime login`)"))
+        self._sync_token = field("paste SpacetimeDB identity token")
+        self._sync_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._sync_token.setText(self._sync_cfg.identity_token)
+        outer.addWidget(self._sync_token)
+
+        btn_row = QHBoxLayout()
+        save_sync_btn = primary_btn("Save Sync Settings")
+        save_sync_btn.clicked.connect(self._save_sync)
+        self._sync_now_btn = QPushButton("Sync now")
+        self._sync_now_btn.clicked.connect(self._sync_now)
+        btn_row.addWidget(save_sync_btn)
+        btn_row.addWidget(self._sync_now_btn)
+        btn_row.addStretch()
+        outer.addLayout(btn_row)
+
+        self._sync_status = QLabel(self._sync_status_text())
+        self._sync_status.setWordWrap(True)
+        self._sync_status.setStyleSheet("color: #a6adc8;")
+        outer.addWidget(self._sync_status)
+
+    def _sync_status_text(self) -> str:
+        ver = version_str(APP_VERSION)
+        last = self._sync_cfg.last_synced_at or "never"
+        return f"App version {ver} · last synced: {last}"
+
+    def _save_sync(self):
+        self._sync_cfg.sync_enabled = self._sync_enabled.isChecked()
+        self._sync_cfg.server_url = self._sync_url.text().strip()
+        self._sync_cfg.module_name = self._sync_module.text().strip()
+        self._sync_cfg.identity_token = self._sync_token.text().strip()
+        self._sync_cfg.save()
+
+        engine = getattr(self.window_, "engine", None)
+        if engine:
+            engine.reset_client()  # url/token may have changed
+        QMessageBox.information(self, "Saved", "Sync settings saved.")
+
+    def _sync_now(self):
+        self._save_sync()  # persist any edits first
+        if not (self.window_ and getattr(self.window_, "engine", None)):
+            QMessageBox.information(self, "Sync", "Sync is unavailable.")
+            return
+        self._sync_status.setText("Syncing…")
+        self._sync_now_btn.setEnabled(False)
+
+        def on_status(msg: str):
+            self._sync_now_btn.setEnabled(True)
+            self._sync_status.setText(f"{msg}\n{self._sync_status_text()}")
+
+        self.window_.sync_now(on_status=on_status)
 
     def _load_templates(self, default_id: int | None = None):
         self._tmpl_combo.clear()

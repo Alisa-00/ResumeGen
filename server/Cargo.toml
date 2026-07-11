@@ -1,0 +1,14 @@
+[package]
+name = "resume-sync"
+version = "0.1.0"
+edition = "2021"
+
+# SpacetimeDB modules compile to a WebAssembly library.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pin to the version that matches your installed `spacetime` CLI
+# (check with `spacetime version`). The table/reducer/RLS API below targets the
+# 1.x line; adjust if your CLI differs.
+spacetimedb = "1.0"

@@ -45,7 +45,7 @@ NAV_ITEMS: list[tuple[str, str]] = [
 ]
 
 
-def _build_view(key: str, db: Database) -> QWidget:
+def _build_view(key: str, db: Database, window: "AppWindow") -> QWidget:
     return {
         "contact": lambda: ContactView(db),
         "experience": lambda: ExperienceView(db),
@@ -56,7 +56,7 @@ def _build_view(key: str, db: Database) -> QWidget:
         "profiles": lambda: ProfilesView(db),
         "templates": lambda: TemplatesView(db),
         "applications": lambda: ApplicationsView(db),
-        "settings": lambda: SettingsView(db),
+        "settings": lambda: SettingsView(db, window=window),
     }.get(key, lambda: PlaceholderView(key))()
 
 
@@ -87,10 +87,12 @@ class _Task(QRunnable):
 
 
 class AppWindow(QMainWindow):
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, engine=None, parent=None):
         super().__init__(parent)
         self.db = db
+        self.engine = engine
         self._wizard_widget = None
+        self._tasks: list[_Task] = []  # keep refs so QRunnables aren't GC'd
         self.setWindowTitle("Resume Orchestrator")
         self.resize(1400, 900)
         self._build_ui()
@@ -122,13 +124,7 @@ class AppWindow(QMainWindow):
         np_l.setContentsMargins(0, 0, 0, 0)
 
         self._content_stack = QStackedWidget()
-        for _, key in NAV_ITEMS:
-            self._content_stack.addWidget(_build_view(key, self.db))
-
-        apps_idx = next(i for i, (_, k) in enumerate(NAV_ITEMS) if k == "applications")
-        apps_view = self._content_stack.widget(apps_idx)
-        apps_view.new_application_requested.connect(lambda: self._open_wizard(None))
-        apps_view.open_application_requested.connect(self._open_wizard)
+        self._populate_views()
 
         np_l.addWidget(self._content_stack)
 
@@ -141,6 +137,81 @@ class AppWindow(QMainWindow):
         root_l.addWidget(self._main_stack, 1)
 
         self._nav.setCurrentRow(0)
+
+    def _populate_views(self):
+        """(Re)build the content stack against the live db connection."""
+        while self._content_stack.count():
+            w = self._content_stack.widget(0)
+            self._content_stack.removeWidget(w)
+            w.deleteLater()
+
+        for _, key in NAV_ITEMS:
+            self._content_stack.addWidget(_build_view(key, self.db, self))
+
+        apps_idx = next(i for i, (_, k) in enumerate(NAV_ITEMS) if k == "applications")
+        apps_view = self._content_stack.widget(apps_idx)
+        apps_view.new_application_requested.connect(lambda: self._open_wizard(None))
+        apps_view.open_application_requested.connect(self._open_wizard)
+
+    def reload_views(self):
+        """Rebuild views after the underlying db file has been swapped by a sync."""
+        current = self._content_stack.currentIndex()
+        self._populate_views()
+        self._content_stack.setCurrentIndex(max(0, current))
+
+    # ── background sync ───────────────────────────────────────────────
+
+    def _submit(self, fn, on_done=None, on_error=None):
+        """Run ``fn`` on the thread pool, delivering results back on the UI thread."""
+        task = _Task(fn)
+        if on_done:
+            task.signals.finished.connect(on_done)
+        task.signals.error.connect(on_error or (lambda msg: print(f"[SYNC] {msg}")))
+        task.signals.finished.connect(lambda *_: self._tasks.remove(task))
+        task.signals.error.connect(lambda *_: self._tasks.remove(task))
+        self._tasks.append(task)
+        QThreadPool.globalInstance().start(task)
+
+    def start_initial_sync(self):
+        """Best-effort pull on launch. Silent on failure — local use never blocks."""
+        if not (self.engine and self.engine.available()):
+            return
+        self._submit(self.engine.pull_fetch, on_done=self._apply_pull)
+
+    def sync_now(self, on_status=None):
+        """Manual sync: push then pull. ``on_status`` (optional) gets a result string."""
+        if not (self.engine and self.engine.available()):
+            if on_status:
+                on_status("Sync is not configured.")
+            return
+
+        def work():
+            pushed = self.engine.push()
+            return pushed, self.engine.pull_fetch()
+
+        def done(result):
+            pushed, fetched = result
+            self._apply_pull(fetched)
+            if on_status:
+                bits = []
+                bits.append("pushed local changes" if pushed else "nothing to push")
+                bits.append("pulled update" if fetched else "no remote update")
+                on_status("Sync complete: " + ", ".join(bits) + ".")
+
+        def failed(msg):
+            if on_status:
+                on_status(f"Sync failed: {msg}")
+            else:
+                print(f"[SYNC] {msg}")
+
+        self._submit(work, on_done=done, on_error=failed)
+
+    def _apply_pull(self, fetched):
+        """UI-thread application of a fetched snapshot (db file swap + reload)."""
+        if not fetched:
+            return
+        meta, db_bytes = fetched
+        self.engine.pull_apply(meta, db_bytes, on_applied=self.reload_views)
 
     def _on_nav_change(self, row: int):
         if self._main_stack.currentIndex() == 1:

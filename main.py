@@ -11,6 +11,8 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 
 from db.database import Database
 from ui.ui import AppWindow
+from sync.config import SyncConfig
+from sync.engine import SyncEngine
 
 
 def resolve_db_path() -> Path | None:
@@ -231,10 +233,23 @@ def main():
     db = Database(db_path)
     db.connect()
 
-    window = AppWindow(db=db)
+    sync_cfg = SyncConfig.load()
+    engine = SyncEngine(db, sync_cfg)
+
+    window = AppWindow(db=db, engine=engine)
     window.showMaximized()
+    window.start_initial_sync()  # best-effort background pull
 
     exit_code = app.exec()
+
+    # Best-effort final push so this machine's latest data reaches the server.
+    # Never let a sync failure affect a clean shutdown.
+    if engine.available():
+        try:
+            engine.push()
+        except Exception as e:  # noqa: BLE001 — shutdown must not crash
+            print(f"[SYNC] push on close failed: {e}")
+
     db.close()
     sys.exit(exit_code)
 

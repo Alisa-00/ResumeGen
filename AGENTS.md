@@ -236,6 +236,11 @@ resumegen/
 2. Add migration in `_migrate()` method
 3. Add getter/setter methods in Database class
 4. Update UI views as needed
+5. **Bump `APP_VERSION` in `version.py`** — minor for a backward-compatible
+   addition (older clients can still read the file), major only for a change
+   that older clients must NOT adopt. Sync uses this to decide which snapshots a
+   client may pull (same major, minor >= local). The version is stamped into the
+   DB file via `PRAGMA user_version` on connect and travels with the data.
 
 ### Adding a New UI View
 
@@ -265,6 +270,23 @@ Key tables:
 
 ---
 
+### Sync (cross-machine)
+
+Optional, off by default, never required for local use. See `sync/` and
+`server/`.
+
+- Whole-DB **snapshot** sync, last-write-wins. The gzipped SQLite file is the
+  unit; no per-row merge. A pull always backs up the local DB first.
+- Per-machine config/state lives in `~/.resume_orchestrator_sync.json`
+  (`sync/config.py`) — **never** in `app_settings`, which is inside the synced DB.
+- Backend is a SpacetimeDB module (`server/`, Rust) reached over its HTTP API via
+  `sync/client.py` (stdlib `urllib` only). `SyncClient` is the abstraction.
+- `sync/engine.py`: `push`/`pull_fetch` are network-only and worker-thread safe
+  (they use private sqlite connections + `make_snapshot`); `pull_apply` swaps the
+  DB file and **must run on the UI thread** (`AppWindow._apply_pull`).
+- Triggers: pull on startup, push on app close, manual "Sync now" (Settings → Sync).
+- Tests: `python3 tests/test_sync.py` (no pytest/PySide6 needed).
+
 ## Notes for Agents
 
 - The app stores its database path in `~/.resume_orchestrator`
@@ -272,3 +294,5 @@ Key tables:
 - PDF generation runs in a QThreadPool worker thread
 - All dates stored as ISO strings (YYYY-MM-DD)
 - Boolean columns use INTEGER (0/1) for SQLite compatibility
+- The DB schema/app version lives in `version.py` (`APP_VERSION`) and is stamped
+  into each DB file's `PRAGMA user_version`; sync relies on it
