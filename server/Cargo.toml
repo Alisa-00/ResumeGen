@@ -8,7 +8,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Pin to the version that matches your installed `spacetime` CLI
-# (check with `spacetime version`). The table/reducer/RLS API below targets the
-# 1.x line; adjust if your CLI differs.
-spacetimedb = "1.0"
+# Keep in lockstep with the installed `spacetime` CLI (`spacetime --version`).
+# `unstable` is required for the row-level-security API (client_visibility_filter).
+spacetimedb = { version = "2.7.1", features = ["unstable"] }
