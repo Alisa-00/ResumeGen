@@ -56,7 +56,6 @@ class WizardWidget(QWidget):
                 "date_applied": existing.get("date_applied", ""),
                 "extra_kw_ids": json.loads(existing.get("extra_keywords", "[]")),
                 "job_posting_url": existing.get("job_posting_url", ""),
-                "job_posting_description": existing.get("job_posting_description", ""),
             }
             self._build_step2(job_data)
             self._stack.setCurrentIndex(1)
@@ -68,19 +67,31 @@ class WizardWidget(QWidget):
         statuses = {s["status"]: s["id"] for s in self.db.get_statuses()}
         status_id = statuses.get("to-apply", 1)
 
+        # Extract referrals before saving (they're not stored in job_application table)
+        referrals = job_data.pop("referrals", [])
+
         self.application_id = self.db.upsert_application(
             profile_id=job_data["profile_id"],
             status_id=status_id,
             position_name=job_data["position_name"],
             company_name=job_data["company_name"],
-            date_applied=job_data.get("date_applied")
-            or date.today().strftime("%Y-%m-%d"),
+            date_applied=job_data.get("date_applied"),
             extra_keywords=json.dumps(job_data.get("extra_kw_ids", [])),
             job_posting_url=job_data.get("job_posting_url", ""),
-            job_posting_description=job_data.get("job_posting_description", ""),
             id=self.application_id,
         )
         job_data["status_id"] = status_id
+
+        # Save referrals now that we have the application_id
+        for ref in referrals:
+            self.db.add_application_referral(
+                application_id=self.application_id,
+                name=ref["name"],
+                email=ref.get("email"),
+                phone=ref.get("phone"),
+                linkedin_url=ref.get("linkedin_url"),
+                description=ref.get("description"),
+            )
 
         self._build_step2(job_data)
         self._stack.setCurrentIndex(1)

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from db.database import Database
-from ui.widgets import section_title, hline, primary_btn, field
+from ui.widgets import section_title, hline, primary_btn, field, check_box
 
 DATE_FORMAT_OPTIONS: list[tuple[str, str]] = [
     ("YYYY", "Year only (2020)"),
@@ -55,7 +55,7 @@ class SectionOrderWidget(QWidget):
             self._append(key, enabled.get(key, True))
 
     def _append(self, key: str, is_enabled: bool):
-        cb = QCheckBox(SECTION_LABELS.get(key, key))
+        cb = check_box(SECTION_LABELS.get(key, key))
         cb.setChecked(is_enabled)
 
         up_btn = QPushButton("▲")

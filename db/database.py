@@ -106,10 +106,10 @@ CREATE TABLE IF NOT EXISTS resume_template (
     name                      TEXT    NOT NULL,
     font_family               TEXT    NOT NULL DEFAULT 'Arial',
     font_size                 REAL    NOT NULL DEFAULT 11.0,
-    margin_top                REAL    NOT NULL DEFAULT 15.0,
-    margin_bottom             REAL    NOT NULL DEFAULT 15.0,
-    margin_left               REAL    NOT NULL DEFAULT 15.0,
-    margin_right              REAL    NOT NULL DEFAULT 15.0,
+    margin_top                REAL    NOT NULL DEFAULT 8.0,
+    margin_bottom             REAL    NOT NULL DEFAULT 8.0,
+    margin_left               REAL    NOT NULL DEFAULT 8.0,
+    margin_right              REAL    NOT NULL DEFAULT 8.0,
     min_bullet_points_per_job INTEGER NOT NULL DEFAULT 2,
     max_bullet_points_per_job INTEGER NOT NULL DEFAULT 5
 );
@@ -164,7 +164,9 @@ CREATE TABLE IF NOT EXISTS job_application (
     status_id            INTEGER NOT NULL REFERENCES job_application_status(id),
     position_name        TEXT    NOT NULL,
     company_name         TEXT    NOT NULL,
+    date_created         TEXT    NOT NULL,
     date_applied         TEXT,
+    date_last_updated    TEXT,
     extra_keywords       TEXT    NOT NULL DEFAULT '[]',
     section_order        TEXT,
     sections_enabled     TEXT,
@@ -181,6 +183,17 @@ CREATE TABLE IF NOT EXISTS job_application (
     included_languages TEXT,
     job_posting_url      TEXT,
     job_posting_description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS application_referral (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+    name           TEXT    NOT NULL,
+    email          TEXT,
+    phone          TEXT,
+    linkedin_url   TEXT,
+    description    TEXT,
+    date_added     TEXT    NOT NULL
 );
 """
 
@@ -221,6 +234,18 @@ class Database:
                 proficiency_level TEXT    NOT NULL
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS application_referral (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id INTEGER NOT NULL REFERENCES job_application(id) ON DELETE CASCADE,
+                name           TEXT    NOT NULL,
+                email          TEXT,
+                phone          TEXT,
+                linkedin_url   TEXT,
+                description    TEXT,
+                date_added     TEXT    NOT NULL
+            )
+            """,
         ]
         for sql in table_creations:
             try:
@@ -255,6 +280,9 @@ class Database:
             ("job_application", "job_posting_url", "TEXT"),
             ("job_application", "job_posting_description", "TEXT"),
             ("job_application", "included_languages", "TEXT"),
+            ("job_application", "date_created", "TEXT"),
+            ("job_application", "date_last_updated", "TEXT"),
+            ("language", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -711,24 +739,22 @@ class Database:
     # ------------------------------------------------------------------
 
     def get_languages(self) -> list[dict]:
-        return self.fetch_all("SELECT * FROM language ORDER BY name")
+        return self.fetch_all("SELECT * FROM language ORDER BY sort_order, name")
 
     def upsert_language(
-        self, name: str, proficiency_level: str, id: int | None = None
+        self, name: str, proficiency_level: str, id: int | None = None, sort_order: int = 0
     ) -> int:
         if id:
             self.execute(
-                "UPDATE language SET name=?, proficiency_level=? WHERE id=?",
-                (name, proficiency_level, id),
+                "UPDATE language SET name=?, proficiency_level=?, sort_order=? WHERE id=?",
+                (name, proficiency_level, sort_order, id),
             )
             return id
-        # Use INSERT OR REPLACE to handle unique constraint on name
-        # This updates proficiency_level if language with this name already exists
         return self.execute(
-            """INSERT INTO language (name, proficiency_level)
-               VALUES (?,?)
-               ON CONFLICT(name) DO UPDATE SET proficiency_level=excluded.proficiency_level""",
-            (name, proficiency_level),
+            """INSERT INTO language (name, proficiency_level, sort_order)
+               VALUES (?,?,?)
+               ON CONFLICT(name) DO UPDATE SET proficiency_level=excluded.proficiency_level, sort_order=excluded.sort_order""",
+            (name, proficiency_level, sort_order),
         )
 
     def delete_language(self, id: int) -> None:
@@ -803,6 +829,12 @@ class Database:
         )
 
     def delete_profile(self, id: int) -> None:
+        self.execute(
+            "UPDATE job_application SET profile_id=NULL WHERE profile_id=?", (id,)
+        )
+        self.execute(
+            "UPDATE resume_config SET profile_id=NULL WHERE profile_id=?", (id,)
+        )
         self.execute("DELETE FROM profile WHERE id=?", (id,))
 
     def get_profile_keywords(self, profile_id: int) -> list[dict]:
@@ -871,12 +903,20 @@ class Database:
         job_posting_description: str | None = None,
         included_languages: str | None = None,
         id: int | None = None,
+        date_created: str | None = None,
+        date_last_updated: str | None = None,
     ) -> int:
+        from datetime import date as _date
+
+        today = _date.today().strftime("%Y-%m-%d")
+        if date_last_updated is None:
+            date_last_updated = today
+
         if id:
             self.execute(
                 """UPDATE job_application SET
                    profile_id=?, status_id=?, position_name=?, company_name=?,
-                   date_applied=?, extra_keywords=?, section_order=?,
+                   date_applied=?, date_last_updated=?, extra_keywords=?, section_order=?,
                    sections_enabled=?, resume_pdf_path=?,
                    selected_summary_id=?, summary_text_override=?,
                    contact_override=?, websites_override=?, experience_overrides=?,
@@ -891,6 +931,7 @@ class Database:
                     position_name,
                     company_name,
                     date_applied,
+                    date_last_updated,
                     extra_keywords,
                     section_order,
                     sections_enabled,
@@ -912,26 +953,36 @@ class Database:
                 ),
             )
             return id
+        if date_created is None:
+            date_created = _date.today().strftime("%Y-%m-%d")
         return self.execute(
             """INSERT INTO job_application
                (profile_id, status_id, position_name, company_name,
-                date_applied, extra_keywords, section_order, sections_enabled,
-                selected_summary_id, summary_text_override,
+                date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
+                resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
                 contact_override, websites_override, experience_overrides,
-                included_experiences, included_education,
-                included_projects, included_bullets,
-                education_overrides, job_posting_url, job_posting_description,
-                included_languages)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                included_experiences, included_education, included_projects, included_languages,
+                job_posting_url, job_posting_description)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            # 23 columns: profile_id, status_id, position_name, company_name,
+            #   date_created, date_applied, date_last_updated, extra_keywords, section_order, sections_enabled,
+            #   resume_pdf_path, keyword_list, selected_summary_id, summary_text_override,
+            #   contact_override, websites_override, experience_overrides,
+            #   included_experiences, included_education, included_projects, included_languages,
+            #   job_posting_url, job_posting_description
             (
                 profile_id,
                 status_id,
                 position_name,
                 company_name,
+                date_created,
                 date_applied,
+                date_last_updated,
                 extra_keywords,
                 section_order,
                 sections_enabled,
+                resume_pdf_path,
+                None,  # keyword_list - not exposed as parameter
                 selected_summary_id,
                 summary_text_override,
                 contact_override,
@@ -940,11 +991,9 @@ class Database:
                 included_experiences,
                 included_education,
                 included_projects,
-                included_bullets,
-                education_overrides,
+                included_languages,
                 job_posting_url,
                 job_posting_description,
-                included_languages,
             ),
         )
 
@@ -953,6 +1002,67 @@ class Database:
 
     def get_statuses(self) -> list[dict]:
         return self.fetch_all("SELECT * FROM job_application_status")
+
+    # ------------------------------------------------------------------
+    # application referrals
+    # ------------------------------------------------------------------
+
+    def get_application_referrals(self, application_id: int) -> list[dict]:
+        return self.fetch_all(
+            """SELECT id, name, email, phone, linkedin_url, description, date_added
+               FROM application_referral
+               WHERE application_id=?
+               ORDER BY date_added DESC""",
+            (application_id,),
+        )
+
+    def get_referral(self, referral_id: int) -> dict | None:
+        return self.fetch_one(
+            """SELECT id, application_id, name, email, phone, linkedin_url, description, date_added
+               FROM application_referral
+               WHERE id=?""",
+            (referral_id,),
+        )
+
+    def add_application_referral(
+        self,
+        application_id: int,
+        name: str,
+        email: str | None = None,
+        phone: str | None = None,
+        linkedin_url: str | None = None,
+        description: str | None = None,
+        date_added: str | None = None,
+    ) -> int:
+        from datetime import date as _date
+
+        if date_added is None:
+            date_added = _date.today().strftime("%Y-%m-%d")
+        return self.execute(
+            """INSERT INTO application_referral
+               (application_id, name, email, phone, linkedin_url, description, date_added)
+               VALUES (?,?,?,?,?,?,?)""",
+            (application_id, name, email, phone, linkedin_url, description, date_added),
+        )
+
+    def update_application_referral(
+        self,
+        referral_id: int,
+        name: str,
+        email: str | None = None,
+        phone: str | None = None,
+        linkedin_url: str | None = None,
+        description: str | None = None,
+    ) -> None:
+        self.execute(
+            """UPDATE application_referral
+               SET name=?, email=?, phone=?, linkedin_url=?, description=?
+               WHERE id=?""",
+            (name, email, phone, linkedin_url, description, referral_id),
+        )
+
+    def delete_application_referral(self, referral_id: int) -> None:
+        self.execute("DELETE FROM application_referral WHERE id=?", (referral_id,))
 
     # ------------------------------------------------------------------
     # bullet overrides

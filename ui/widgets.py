@@ -6,12 +6,13 @@ Shared widget factories and reusable components used across views.
 from __future__ import annotations
 
 from PySide6.QtGui import QFont, QPainter, QPen, QColor
-from PySide6.QtCore import Qt, Signal, QSize, QRect
+from PySide6.QtCore import Qt, Signal, QSize, QRect, QPointF
 from PySide6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QScrollArea,
     QComboBox, QSizePolicy,
     QListWidget, QListWidgetItem,
+    QCheckBox, QStyle, QStyleOptionButton,
 )
 
 
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
 
 def section_title(text: str) -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet("font-size: 26px; font-weight: bold; margin-top: 6px;")
+    lbl.setStyleSheet("color: #cdd6f4; font-size: 26px; font-weight: bold; margin-top: 6px;")
     return lbl
 
 
@@ -29,6 +30,10 @@ def hline() -> QFrame:
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     f.setFrameShadow(QFrame.Shadow.Sunken)
+    # Colour the separator locally. A global `QFrame { color }` rule would also
+    # recolour every QLabel/QTextEdit (both are QFrame subclasses), so the colour
+    # must stay scoped to the separator itself.
+    f.setStyleSheet("color: #313244;")
     return f
 
 
@@ -80,6 +85,37 @@ class _XButton(QPushButton):
 def small_danger_btn(text: str = "X") -> _XButton:
     """Compact danger button with a painted thick X."""
     return _XButton()
+
+
+class CheckBox(QCheckBox):
+    """Checkbox that paints its own tick so it stays visible on the dark theme
+    regardless of platform style (mirrors _XButton's painted glyph approach)."""
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.isChecked():
+            return
+        opt = QStyleOptionButton()
+        self.initStyleOption(opt)
+        r = self.style().subElementRect(
+            QStyle.SubElement.SE_CheckBoxIndicator, opt, self)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor("#1e1e2e"))      # dark tick over the blue checked box
+        pen.setWidth(3)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        x, y, w, h = r.x(), r.y(), r.width(), r.height()
+        p.drawPolyline([
+            QPointF(x + w * 0.25, y + h * 0.52),
+            QPointF(x + w * 0.45, y + h * 0.70),
+            QPointF(x + w * 0.75, y + h * 0.30),
+        ])
+        p.end()
+
+
+def check_box(text: str = "") -> "CheckBox":
+    return CheckBox(text)
 
 
 def flat_link_btn(text: str) -> QPushButton:
@@ -345,5 +381,5 @@ class PlaceholderView(QWidget):
         super().__init__(parent)
         lbl = QLabel(f"[ {label} — coming soon ]")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setStyleSheet("color: grey; font-size: 16px;")
+        lbl.setStyleSheet("color: #585b70; font-size: 16px;")
         QVBoxLayout(self).addWidget(lbl)

@@ -1,3 +1,9 @@
+/* ── Page setup ─────────────────────────────────────────────── */
+@page {
+    margin: 0;
+    size: A4;
+}
+
 /* ── Reset ──────────────────────────────────────────────────── */
 *,
 *::before,
@@ -19,6 +25,10 @@ a {
 }
 
 /* ── Contact block ──────────────────────────────────────────── */
+body {
+    text-align: left;
+}
+
 .contact-block {
     text-align: center;
     margin-bottom: 10pt;
@@ -146,12 +156,12 @@ section {
     font-weight: bold;
 }
 
-.edu-title .edu-school {
+.edu-school {
     font-weight: normal;
     margin-left: 4pt;
 }
 
-.edu-title .edu-school a {
+.edu-school a {
     color: inherit;
     text-decoration: underline;
 }
@@ -162,37 +172,10 @@ section {
     margin: 0 4pt;
 }
 
-.edu-title .edu-loc {
-    font-size: 0.85em;
-    color: #888;
-    margin-left: 6pt;
-}
-
 /* ── Languages ─────────────────────────────────────────────────── */
-.languages-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 4pt 12pt;
-    margin-top: 4pt;
-}
-
-.language-item {
-    display: flex;
-    flex-direction: column;
-}
-
-.language-name {
-    font-weight: 600;
-    font-size: 0.9em;
-    color: #333;
-    line-height: 1.25;
-}
-
-.language-level {
-    font-size: 0.8em;
-    color: #666;
-    line-height: 1.25;
-    margin-top: 0.5pt;
+.languages-list {
+    font-size: 0.93em;
+    line-height: 1.6;
 }
 
 /* ── Bullet points ──────────────────────────────────────────── */

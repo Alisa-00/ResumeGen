@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QCheckBox,
     QButtonGroup,
     QRadioButton,
     QScrollArea,
@@ -34,7 +33,7 @@ from PySide6.QtWidgets import (
 
 from db.database import Database
 from pdf.display import PdfPreviewWidget
-from ui.widgets import primary_btn, flat_link_btn, small_danger_btn
+from ui.widgets import primary_btn, flat_link_btn, small_danger_btn, check_box
 
 SECTION_LABELS = {
     "contact": "Contact",
@@ -564,15 +563,11 @@ class _SummaryContent(QWidget):
             chosen_btn = self._group.buttons()[0]
 
         if chosen_btn:
-            initial = (
-                saved_text_override
-                if saved_text_override is not None
-                else chosen_btn.property("summary_text")
-            )
-            self._edit.blockSignals(True)
-            self._edit.setPlainText(initial)
-            self._edit.blockSignals(False)
             chosen_btn.setChecked(True)
+            if saved_text_override is not None:
+                self._edit.blockSignals(True)
+                self._edit.setPlainText(saved_text_override)
+                self._edit.blockSignals(False)
 
     def _on_radio_toggled(self, btn, checked: bool):
         if not checked:
@@ -617,7 +612,12 @@ class _ExperienceItem(_SubItem):
         meta_lbl.setStyleSheet("color: #a6adc8; font-size: 16px; font-weight: bold;")
         self._body_layout.addWidget(meta_lbl)
 
-        self._f_desc = QLineEdit(eo.get("organization_description") or "")
+        # Check if key exists in override (even if empty string)
+        if "organization_description" in eo:
+            desc_val = eo["organization_description"]  # Use saved (even if empty)
+        else:
+            desc_val = job.get("organization_description") or ""  # First load only
+        self._f_desc = QLineEdit(desc_val)
         self._f_desc.setPlaceholderText("e.g. startup working on X")
         self._f_desc.setStyleSheet(
             "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
@@ -625,7 +625,12 @@ class _ExperienceItem(_SubItem):
         self._f_desc.textChanged.connect(self.changed)
         self._add_body_row("Description", self._f_desc)
 
-        self._f_url = QLineEdit(eo.get("organization_website") or "")
+        # Check if key exists in override (even if empty string)
+        if "organization_website" in eo:
+            url_val = eo["organization_website"]  # Use saved (even if empty)
+        else:
+            url_val = job.get("organization_website") or ""  # First load only
+        self._f_url = QLineEdit(url_val)
         self._f_url.setPlaceholderText("https://company.com")
         self._f_url.setStyleSheet(
             "QLineEdit { background: #141618; border: 1px solid #89b4fa; border-radius: 4px; padding: 4px 8px; }"
@@ -646,15 +651,12 @@ class _ExperienceItem(_SubItem):
 
     def get_overrides(self) -> tuple[dict[int, str], dict]:
         bullet_ovs = self._bullet_list.get_overrides()
-        meta = {}
-        desc = self._f_desc.text().strip()
-        url = self._f_url.text().strip()
-        base_desc = (self._original.get("organization_description") or "").strip()
-        base_url = (self._original.get("organization_website") or "").strip()
-        if desc != base_desc:
-            meta["organization_description"] = desc
-        if url != base_url:
-            meta["organization_website"] = url
+        # Always include org fields so they persist in application data
+        # This ensures application data is the single source of truth
+        meta = {
+            "organization_description": self._f_desc.text().strip(),
+            "organization_website": self._f_url.text().strip(),
+        }
         return bullet_ovs, meta
 
     def get_meta_override(self) -> dict:
@@ -1353,7 +1355,7 @@ class SectionRow(QWidget):
         lbl.setStyleSheet("font-size: 20px; color: #cdd6f4;")
         hl.addWidget(lbl, 1)
 
-        self.checkbox = QCheckBox()
+        self.checkbox = check_box()
         self.checkbox.setChecked(enabled)
         self.checkbox.setStyleSheet("QCheckBox { border: none; }")
         hl.addWidget(self.checkbox)
@@ -1716,8 +1718,19 @@ class StepPreview(QWidget):
             w.changed.connect(self._on_change)
             return w
         if key == "experience":
+            all_experiences = data.get("experiences") or []
+            # When included_experiences is set, only show those selected experiences
+            # This handles the case when profile is NULL (deleted) and get_resume_data
+            # returns all experiences - we still want to respect the user's selection
+            if inc_exp is not None:
+                exp_map = {e["id"]: e for e in all_experiences}
+                selected_experiences = [
+                    exp_map[eid] for eid in inc_exp if eid in exp_map
+                ]
+            else:
+                selected_experiences = all_experiences
             w = _ExperienceContent(
-                data.get("experiences") or [],
+                selected_experiences,
                 inc_exp,
                 self._bullet_overrides,
                 inc_bullets,
@@ -1726,7 +1739,13 @@ class StepPreview(QWidget):
             w.changed.connect(self._on_change)
             return w
         if key == "education":
-            w = _EducationContent(data.get("education") or [], inc_edu, edu_overrides)
+            all_education = data.get("education") or []
+            if inc_edu is not None:
+                edu_map = {e["id"]: e for e in all_education}
+                selected_education = [edu_map[eid] for eid in inc_edu if eid in edu_map]
+            else:
+                selected_education = all_education
+            w = _EducationContent(selected_education, inc_edu, edu_overrides)
             w.changed.connect(self._on_change)
             return w
         if key == "languages":
@@ -1739,7 +1758,13 @@ class StepPreview(QWidget):
             w.changed.connect(self._on_change)
             return w
         if key == "projects":
-            w = _ProjectsContent(data.get("projects") or [], inc_prj)
+            all_projects = data.get("projects") or []
+            if inc_prj is not None:
+                prj_map = {p["id"]: p for p in all_projects}
+                selected_projects = [prj_map[pid] for pid in inc_prj if pid in prj_map]
+            else:
+                selected_projects = all_projects
+            w = _ProjectsContent(selected_projects, inc_prj)
             w.changed.connect(self._on_change)
             return w
         if key == "keywords":
@@ -1948,6 +1973,8 @@ class StepPreview(QWidget):
                 )
                 if s["experience_overrides"]
                 else None,
+                job_posting_url=jd.get("job_posting_url"),
+                job_posting_description=jd.get("job_posting_description"),
                 id=self.application_id,
             )
             # save the full explicit keyword list so reopening uses it directly

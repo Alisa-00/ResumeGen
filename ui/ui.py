@@ -106,7 +106,7 @@ class AppWindow(QMainWindow):
         self._nav = QListWidget()
         self._nav.setFixedWidth(240)
         self._nav.setStyleSheet("""
-            QListWidget { background: #1e1e2e; border: none; }
+            QListWidget { background: #181825; border: none; border-right: 1px solid #45475a; }
             QListWidget::item { color: #cdd6f4; padding: 12px 16px; font-size: 13px; }
             QListWidget::item:selected { background: #313244; color: #89b4fa; }
             QListWidget::item:hover { background: #2a2a3d; }
