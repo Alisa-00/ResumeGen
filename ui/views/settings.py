@@ -284,8 +284,18 @@ class SettingsView(QWidget):
         return f"App version {ver} · last synced: {last}"
 
     def _save_sync(self):
+        url = self._sync_url.text().strip().rstrip("/")
+        if url and "://" not in url:
+            url = "https://" + url  # bare hostname → assume HTTPS
+            self._sync_url.setText(url)
+        if url and not url.startswith(("http://", "https://")):
+            QMessageBox.warning(
+                self, "Sync",
+                f"Server URL must start with http:// or https:// — got: {url}",
+            )
+            return False
         self._sync_cfg.sync_enabled = self._sync_enabled.isChecked()
-        self._sync_cfg.server_url = self._sync_url.text().strip()
+        self._sync_cfg.server_url = url
         self._sync_cfg.module_name = self._sync_module.text().strip()
         self._sync_cfg.identity_token = self._sync_token.text().strip()
         self._sync_cfg.save()
@@ -294,9 +304,11 @@ class SettingsView(QWidget):
         if engine:
             engine.reset_client()  # url/token may have changed
         QMessageBox.information(self, "Saved", "Sync settings saved.")
+        return True
 
     def _sync_now(self):
-        self._save_sync()  # persist any edits first
+        if not self._save_sync():  # persist any edits first
+            return
         if not (self.window_ and getattr(self.window_, "engine", None)):
             QMessageBox.information(self, "Sync", "Sync is unavailable.")
             return

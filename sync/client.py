@@ -73,7 +73,10 @@ class SpacetimeHttpClient(SyncClient):
     )
 
     def __init__(self, server_url: str, module_name: str, token: str, timeout: float = 15.0):
-        self._base = server_url.rstrip("/")
+        base = server_url.strip().rstrip("/")
+        if base and "://" not in base:
+            base = "https://" + base  # bare hostname → assume HTTPS
+        self._base = base
         self._module = module_name
         self._token = token
         self._timeout = timeout
@@ -82,18 +85,20 @@ class SpacetimeHttpClient(SyncClient):
 
     def _request(self, path: str, body: str, content_type: str) -> str:
         url = f"{self._base}/v1/database/{self._module}/{path}"
-        req = urllib.request.Request(
-            url,
-            data=body.encode("utf-8"),
-            method="POST",
-            headers={
-                "Content-Type": content_type,
-                "Authorization": f"Bearer {self._token}",
-            },
-        )
         try:
+            req = urllib.request.Request(
+                url,
+                data=body.encode("utf-8"),
+                method="POST",
+                headers={
+                    "Content-Type": content_type,
+                    "Authorization": f"Bearer {self._token}",
+                },
+            )
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 return resp.read().decode("utf-8")
+        except ValueError as e:  # e.g. "unknown url type" from a malformed server URL
+            raise SyncError(f"Invalid sync server URL: {url}") from e
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")
             raise SyncError(f"HTTP {e.code} from sync server: {detail}") from e
