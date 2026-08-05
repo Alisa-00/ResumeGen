@@ -169,6 +169,42 @@ def test_version_gating_blocks_other_major():
         assert eng.pull_fetch() is None, "must not pull a different major"
 
 
+def test_first_sync_guard_blocks_stale_push():
+    """A never-synced machine must not silently bury existing server history."""
+    from sync.client import SyncError
+
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        server = FakeServer()
+
+        a = _engine(tmp, "a", server)
+        _set_contact(a.db, "Alice")
+        assert a.push() is True, "empty server: bootstrap push must be allowed"
+
+        b = _engine(tmp, "b", server)  # never synced, server now has history
+        _set_contact(b.db, "StaleBob")
+        try:
+            b.push()
+            raise AssertionError("expected SyncError from first-sync guard")
+        except SyncError:
+            pass
+        assert b.cfg.last_synced_seq == 0, "blocked push must not record a sync"
+
+        # explicit override — the UI dialog's "keep local and upload" choice
+        assert b.push(first_sync_ok=True) is True
+        assert b.cfg.last_synced_seq == 2
+
+        # a machine that pulled first needs no override afterwards
+        c = _engine(tmp, "c", server)
+        fetched = c.pull_fetch()
+        assert fetched is not None
+        c.pull_apply(*fetched)
+        _set_contact(c.db, "Carol")
+        assert c.push() is True
+
+        a.db.close(); b.db.close(); c.db.close()
+
+
 def _run():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

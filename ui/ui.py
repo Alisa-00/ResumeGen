@@ -186,6 +186,14 @@ class AppWindow(QMainWindow):
             return
 
         def work():
+            if self.engine.cfg.last_synced_seq == 0:
+                # Never synced: look at the server BEFORE pushing, so existing
+                # history triggers the first-sync choice instead of being
+                # buried under a stale upload.
+                fetched = self.engine.pull_fetch()
+                if fetched:
+                    return None, fetched  # push decision deferred to the dialog
+                return self.engine.push(), None  # server empty — normal bootstrap
             pushed = self.engine.push()
             return pushed, self.engine.pull_fetch()
 
@@ -193,6 +201,9 @@ class AppWindow(QMainWindow):
             pushed, fetched = result
             self._apply_pull(fetched)
             if on_status:
+                if pushed is None:
+                    on_status("First sync complete.")
+                    return
                 bits = []
                 bits.append("pushed local changes" if pushed else "nothing to push")
                 bits.append("pulled update" if fetched else "no remote update")
@@ -209,9 +220,38 @@ class AppWindow(QMainWindow):
     def _apply_pull(self, fetched):
         """UI-thread application of a fetched snapshot (db file swap + reload)."""
         if not fetched:
+            print("[SYNC] pull: no newer snapshot on server")
             return
         meta, db_bytes = fetched
+
+        if self.engine.cfg.last_synced_seq == 0:
+            # First-ever sync on this machine and the server already has
+            # history — let the user pick a winner instead of guessing.
+            box = QMessageBox(self)
+            box.setWindowTitle("Sync — first connection")
+            box.setText(
+                f"The sync server already has data (snapshot seq {meta.seq}).\n\n"
+                "Download it and replace this machine's data (the local database "
+                "is backed up first), or keep this machine's data and upload it "
+                "to the server?"
+            )
+            download = box.addButton("Download server copy", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Keep local and upload", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(download)
+            box.exec()
+            if box.clickedButton() is not download:
+                print("[SYNC] first sync: keeping local data, uploading")
+                self._submit(
+                    lambda: self.engine.push(first_sync_ok=True),
+                    on_done=lambda pushed: print(
+                        "[SYNC] first sync: uploaded local data"
+                        if pushed else "[SYNC] first sync: nothing to upload"
+                    ),
+                )
+                return
+
         self.engine.pull_apply(meta, db_bytes, on_applied=self.reload_views)
+        print(f"[SYNC] adopted server snapshot seq {meta.seq}")
 
     def _on_nav_change(self, row: int):
         if self._main_stack.currentIndex() == 1:

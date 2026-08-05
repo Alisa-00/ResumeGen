@@ -84,7 +84,7 @@ Hand-rolled runner (not pytest); covers versioning helpers, deterministic snapsh
 - **Garbage collection is manual:** run `prune_snapshots` occasionally (no automatic retention); client still accumulates `*.db.bak-*` files on every pull.
 - **SQL string interpolation** of `snapshot_id` into the chunk query in `sync/client.py` (value is currently always a client-generated uuid4 hex, but unvalidated).
 - **Identity token stored in plaintext** in `~/.resume_orchestrator_sync.json` with default file permissions; no keyring.
-- **Silent last-write-wins pull on startup** overwrites the local DB (backup taken, but the user is not told), even if local has unpushed edits.
+- **Last-write-wins pull on startup** overwrites the local DB with anything newer (backup taken; decisions now logged to stdout). Hardened 2026-08-05: a machine's *first* sync against a server with existing history prompts the user to download or upload (and a never-synced machine refuses to push over existing history without that choice); subsequent pulls remain automatic.
 - **Synchronous push on app close** with a 15 s per-request timeout across many chunk requests — the app can appear to hang at exit; errors are only printed to stdout.
 - **Payload inflation:** bytes-as-JSON-int-arrays costs ~4–6× on the wire (a 10 MB DB ≈ 50 MB over ~80 requests at 128 KB chunks).
 - **fd leak:** `tempfile.mkstemp()[1]` in `sync/engine.py` discards the file descriptor on every push/pull.

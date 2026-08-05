@@ -102,8 +102,13 @@ class SyncEngine:
 
     # ── push (worker-thread safe) ─────────────────────────────────────
 
-    def push(self) -> bool:
-        """Upload the local DB as a snapshot. No-op if unchanged. Returns True if pushed."""
+    def push(self, *, first_sync_ok: bool = False) -> bool:
+        """Upload the local DB as a snapshot. No-op if unchanged. Returns True if pushed.
+
+        A machine that has never synced refuses to push over existing server
+        history unless ``first_sync_ok`` — the caller must first resolve the
+        download-or-upload choice (see the first-sync dialog in the UI).
+        """
         if not self.available():
             return False
         payload, sha, chunks = make_snapshot(self.db.db_path)
@@ -112,7 +117,13 @@ class SyncEngine:
 
         client = self.client()
         major, minor = read_data_version(self.db.db_path)
-        seq = max(client.next_seq(), self.cfg.last_synced_seq + 1)
+        next_seq = client.next_seq()
+        if not first_sync_ok and self.cfg.last_synced_seq == 0 and next_seq > 1:
+            raise SyncError(
+                "server already has snapshots but this machine has never synced — "
+                "use Settings → Sync → 'Sync now' to choose download or upload first"
+            )
+        seq = max(next_seq, self.cfg.last_synced_seq + 1)
         meta = SnapshotMeta(
             snapshot_id=uuid.uuid4().hex,
             device_id=self.cfg.device_id,

@@ -304,6 +304,11 @@ class SettingsView(QWidget):
         if engine:
             engine.reset_client()  # url/token may have changed
         QMessageBox.information(self, "Saved", "Sync settings saved.")
+        if self._sync_cfg.is_ready() and self.window_ is not None:
+            # Sync just became usable on this machine — check the server now
+            # (first-sync choice / newer snapshot) instead of waiting for the
+            # next launch, whose startup pull has already run.
+            self.window_.start_initial_sync()
         return True
 
     def _sync_now(self):
