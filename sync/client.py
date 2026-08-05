@@ -138,21 +138,23 @@ class SpacetimeHttpClient(SyncClient):
 
     # -- SyncClient API -------------------------------------------------
 
+    # SpacetimeDB SQL supports projections/WHERE/JOIN/LIMIT but has no ORDER BY,
+    # so "latest" selection happens client-side over the (small) metadata rows.
+
     def next_seq(self) -> int:
-        rows = self._sql("SELECT seq FROM snapshot ORDER BY seq DESC LIMIT 1")
+        rows = self._sql("SELECT seq FROM snapshot")
         if not rows:
             return 1
-        return int(rows[0][0]) + 1
+        return max(int(r[0]) for r in rows) + 1
 
     def get_latest(self, major: int, minor: int) -> SnapshotMeta | None:
         rows = self._sql(
             f"SELECT {self._SNAPSHOT_COLS} FROM snapshot "
-            f"WHERE major = {int(major)} AND minor >= {int(minor)} "
-            f"ORDER BY seq DESC LIMIT 1"
+            f"WHERE major = {int(major)} AND minor >= {int(minor)}"
         )
         if not rows:
             return None
-        r = rows[0]
+        r = max(rows, key=lambda row: int(row[4]))  # highest seq (column 4)
         return SnapshotMeta(
             snapshot_id=str(r[0]),
             device_id=str(r[1]),
@@ -169,12 +171,13 @@ class SpacetimeHttpClient(SyncClient):
     def fetch_payload(self, meta: SnapshotMeta) -> bytes:
         rows = self._sql(
             "SELECT idx, data FROM snapshot_chunk "
-            f"WHERE snapshot_id = '{meta.snapshot_id}' ORDER BY idx"
+            f"WHERE snapshot_id = '{meta.snapshot_id}'"
         )
         if len(rows) != meta.chunk_count:
             raise SyncError(
                 f"Expected {meta.chunk_count} chunks, server returned {len(rows)}"
             )
+        rows.sort(key=lambda r: int(r[0]))  # no ORDER BY server-side
         return b"".join(self._decode_bytes(r[1]) for r in rows)
 
     def push(self, meta: SnapshotMeta, chunks: list[bytes]) -> None:
