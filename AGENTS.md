@@ -25,7 +25,7 @@ python main.py
 
 ## Build/Lint/Test Commands
 
-Currently, this project does **not** have a formal test suite or linting configuration.
+tests/test_sync.py
 
 ### Adding Tests (Recommended)
 

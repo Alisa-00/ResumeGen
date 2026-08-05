@@ -75,7 +75,6 @@ Hand-rolled runner (not pytest); covers versioning helpers, deterministic snapsh
 ## Known gaps and notes
 
 ### Verify before trusting a deployment
-- ~~Server module has never been compiled~~ **Resolved 2026-08-05:** rewritten for SpacetimeDB 2.7.1; `cargo check`, wasm release build, and `spacetime build` all pass.
 - **`Vec<u8>` wire encoding** — SATS-JSON docs confirm byte arrays travel as JSON arrays of numbers, matching `sync/client.py` exactly; still confirm with the live smoke test above.
 - **RLS is an unstable SpacetimeDB feature** (opt-in `unstable` crate feature; API may change) and the **module owner's identity bypasses RLS entirely** — the owner-unscoped SQL reads in `sync/client.py` depend on it completely. Run the two-identity RLS test above with a non-owner identity before trusting isolation.
 
@@ -89,11 +88,6 @@ Hand-rolled runner (not pytest); covers versioning helpers, deterministic snapsh
 - **Synchronous push on app close** with a 15 s per-request timeout across many chunk requests — the app can appear to hang at exit; errors are only printed to stdout.
 - **Payload inflation:** bytes-as-JSON-int-arrays costs ~4–6× on the wire (a 10 MB DB ≈ 50 MB over ~80 requests at 128 KB chunks).
 - **fd leak:** `tempfile.mkstemp()[1]` in `sync/engine.py` discards the file descriptor on every push/pull.
-
-### Housekeeping
-- `aiosqlite` in `requirements.txt` is unused (the app uses synchronous stdlib `sqlite3`).
-- `ui/views/summary.py.bak` is a committed backup file.
-- `AGENTS.md` line 27 still says there is no test suite; `tests/test_sync.py` exists (and is referenced later in the same file).
 
 ### Version bumps
 When changing the DB schema, bump `APP_VERSION` in `version.py`: minor for backward-compatible additions, major when older clients must not adopt the file. Note there is no UI surfacing of a version mismatch — an incompatible pull silently does nothing.
