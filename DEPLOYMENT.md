@@ -37,20 +37,20 @@ Verdict: ready for a dev/testing deployment. The remaining unknowns are runtime-
 2. **Compile the module** — in `server/`: `spacetime build` (or `cargo build --target wasm32-unknown-unknown --release`). Already verified clean against 2.7.1; `wasm-opt` (binaryen) is optional for a smaller module.
 3. **Start a local instance**:
    ```bash
-   spacetime start &
+   spacetime start
    ```
    Serves on `http://127.0.0.1:3000`.
 4. **Publish the module**:
    ```bash
    spacetime login
-   spacetime publish --project-path server my-resume-sync --server local
+   spacetime publish --server local --module-path server resumegen-sync
    ```
 5. **Get the identity token** — `spacetime login --token` (or read it from the `~/.spacetime` config). The **same token on every device** is what links devices to one snapshot history.
-6. **Configure the app** — Settings → Sync: enable sync, server URL `http://127.0.0.1:3000`, module name `my-resume-sync`, paste the token. Config is stored per-machine in `~/.resume_orchestrator_sync.json` (never inside the synced DB).
+6. **Configure the app** — Settings → Sync: enable sync, server URL `http://127.0.0.1:3000`, module name `resumegen-sync`, paste the token. Config is stored per-machine in `~/.resume_orchestrator_sync.json` (never inside the synced DB).
 
-**Maincloud alternative to steps 3–4:** `spacetime publish --project-path server my-resume-sync` and use `https://maincloud.spacetimedb.com` as the server URL.
+**Maincloud alternative to steps 3–4:** `spacetime publish --project-path server resumegen-sync` and use `https://maincloud.spacetimedb.com` as the server URL.
 
-**Storage hygiene:** old snapshots are kept forever unless pruned. Occasionally run `spacetime call my-resume-sync prune_snapshots 5` (keeps each caller's newest 5 snapshots, deletes older ones plus stale orphan chunks).
+**Storage hygiene:** old snapshots are kept forever unless pruned. Occasionally run `spacetime call resumegen-sync prune_snapshots 5` (keeps each caller's newest 5 snapshots, deletes older ones plus stale orphan chunks).
 
 ## Testing
 
