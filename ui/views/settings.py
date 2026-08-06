@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from db.database import Database
-from ui.widgets import section_title, hline, primary_btn, field, check_box
+from ui.widgets import section_title, hline, primary_btn, field, check_box, scrollable
 from sync.config import SyncConfig
 from version import APP_VERSION, version_str
 
@@ -42,10 +42,18 @@ SECTION_LABELS: dict[str, str] = {
 # ── section order widget ──────────────────────────────────────────────
 
 
+ROW_HEIGHT = 52
+
+
 class SectionOrderWidget(QWidget):
     def __init__(self, order: list[str], enabled: dict[str, bool], parent=None):
         super().__init__(parent)
         self._items: list[tuple[str, QCheckBox]] = []
+
+        # Never let an ancestor layout squeeze this widget: the rows carry fixed
+        # heights, so compression would collapse the checkboxes to nothing while
+        # the ▲▼ buttons stayed put and overlapped.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 4, 0, 4)
@@ -63,7 +71,7 @@ class SectionOrderWidget(QWidget):
         up_btn = QPushButton("▲")
         dn_btn = QPushButton("▼")
         for btn in (up_btn, dn_btn):
-            btn.setFixedSize(52, 52)
+            btn.setFixedSize(ROW_HEIGHT, ROW_HEIGHT)
             btn.setStyleSheet(
                 "QPushButton {"
                 "  font-size: 22px; color: #89b4fa;"
@@ -74,41 +82,40 @@ class SectionOrderWidget(QWidget):
                 "QPushButton:hover { background-color: #45475a; }"
             )
 
-        up_btn.clicked.connect(lambda _=None, k=key: self._move(k, -1))
-        dn_btn.clicked.connect(lambda _=None, k=key: self._move(k, +1))
+        # Rows keep their position for the widget's lifetime — reordering swaps
+        # the contents — so binding the buttons to the row index stays correct.
+        pos = len(self._items)
+        up_btn.clicked.connect(lambda _=None, i=pos: self._move(i, -1))
+        dn_btn.clicked.connect(lambda _=None, i=pos: self._move(i, +1))
 
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
-        row.addWidget(up_btn)
-        row.addWidget(dn_btn)
-        row.addWidget(cb, 1)
+        row = QWidget()
+        row.setFixedHeight(ROW_HEIGHT)
+        row_l = QHBoxLayout(row)
+        row_l.setContentsMargins(0, 0, 0, 0)
+        row_l.setSpacing(12)
+        row_l.addWidget(up_btn)
+        row_l.addWidget(dn_btn)
+        row_l.addWidget(cb, 1)
 
         self._items.append((key, cb))
-        self._layout.addLayout(row)
+        self._layout.addWidget(row)
 
-    def _move(self, key: str, delta: int):
-        idx = next((i for i, (k, _) in enumerate(self._items) if k == key), None)
-        if idx is None:
-            return
+    def _move(self, idx: int, delta: int):
         new_idx = idx + delta
-        if new_idx < 0 or new_idx >= len(self._items):
+        if not (0 <= idx < len(self._items) and 0 <= new_idx < len(self._items)):
             return
 
-        state = [(k, cb.isChecked()) for k, cb in self._items]
-        state[idx], state[new_idx] = state[new_idx], state[idx]
+        key_a, cb_a = self._items[idx]
+        key_b, cb_b = self._items[new_idx]
 
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            if item.layout():
-                while item.layout().count():
-                    w = item.layout().takeAt(0).widget()
-                    if w:
-                        w.deleteLater()
+        checked_a = cb_a.isChecked()
+        cb_a.setText(SECTION_LABELS.get(key_b, key_b))
+        cb_a.setChecked(cb_b.isChecked())
+        cb_b.setText(SECTION_LABELS.get(key_a, key_a))
+        cb_b.setChecked(checked_a)
 
-        self._items.clear()
-        for k, enabled in state:
-            self._append(k, enabled)
+        self._items[idx] = (key_b, cb_a)
+        self._items[new_idx] = (key_a, cb_b)
 
     def get_order(self) -> list[str]:
         return [k for k, _ in self._items]
@@ -128,7 +135,12 @@ class SettingsView(QWidget):
 
         settings = self.db.get_settings() or {}
 
-        outer = QVBoxLayout(self)
+        # The page is taller than the window on most screens (the UI runs at a
+        # ~2.5x font scale), so it lives in a scroll area — without one the
+        # layout compresses every child below its minimum and the lower half
+        # (Sync) becomes unreachable.
+        inner = QWidget()
+        outer = QVBoxLayout(inner)
         outer.setContentsMargins(24, 16, 24, 16)
         outer.setSpacing(12)
 
@@ -219,6 +231,10 @@ class SettingsView(QWidget):
 
         self._build_sync_section(outer)
         outer.addStretch()
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(scrollable(inner))
 
     # ── sync ──────────────────────────────────────────────────────────
 
