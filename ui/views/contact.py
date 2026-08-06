@@ -6,7 +6,10 @@ from PySide6.QtWidgets import (
 )
 
 from db.database import Database
-from ui.widgets import section_title, hline, primary_btn, flat_link_btn, field, small_danger_btn
+from ui.widgets import (
+    section_title, hline, primary_btn, flat_link_btn, field, small_danger_btn,
+    scrollable,
+)
 
 
 class _WebsiteRow(QWidget):
@@ -32,7 +35,10 @@ class ContactView(QWidget):
         self.db = db
         self._website_rows: list[_WebsiteRow] = []
 
-        outer = QVBoxLayout(self)
+        # Scrollable like every other view — a short window would otherwise
+        # compress the rows into each other instead of scrolling.
+        inner = QWidget()
+        outer = QVBoxLayout(inner)
         outer.setContentsMargins(24, 16, 24, 16)
 
         outer.addWidget(section_title("Contact Information"))
@@ -74,6 +80,10 @@ class ContactView(QWidget):
         save_btn.clicked.connect(self._save)
         outer.addWidget(save_btn)
         outer.addStretch()
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(scrollable(inner))
 
         self._load()
 
