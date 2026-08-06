@@ -66,7 +66,7 @@ Hand-rolled runner (not pytest); covers versioning helpers, deterministic snapsh
 
 1. **Wire-format smoke test — do this first.** Push once ("Sync now"), then:
    ```bash
-   spacetime sql my-resume-sync "SELECT snapshot_id, seq, size, chunk_count FROM snapshot"
+   spacetime sql resumegen-sync "SELECT snapshot_id, seq, size, chunk_count FROM snapshot"
    ```
    Confirm the row landed, then pull on a second device/checkout and confirm the sha256 verifies. `sync/client.py` sends `Vec<u8>` chunk data as JSON int arrays and defensively decodes int-array *or* hex on read; SATS-JSON docs (2.x) confirm the int-array form, so this is expected to pass — but confirm once against the live server before trusting real data to it.
 2. **Two-device convergence.** Second machine (or second checkout with its own `HOME`) with the same token: edit data → close app (push) → open on the first machine (pull) → confirm a `*.db.bak-*` backup was created and the data converged.
