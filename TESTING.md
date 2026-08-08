@@ -1,31 +1,32 @@
 # Manual / Real-Scenario Test Plan
 
-Covers the behavior changed in this round of fixes that the **automated** checks
-could not exercise in a real running application — i.e. the real GUI, real files
-on disk, and (where noted) a live SpacetimeDB sync server.
+Remaining real-scenario tests for this round of fixes. Cases that were already
+executed successfully **and cleanly** have been removed; items proven by the
+automated suite are listed in
+[§4 Already covered](#4-already-covered-by-automation--no-manual-test-needed) and
+have no manual case.
 
-Pure-logic changes are already covered by `tests/test_sync.py` and the ad-hoc
-verification scripts run during development; those are listed under
-[§4 Already covered — no manual test needed](#4-already-covered-by-automation--no-manual-test-needed)
-and deliberately have **no** manual cases here.
+What's left:
+- **A1, A2** — the change under test passed, but both surfaced an unrelated
+  window-geometry glitch (see [Open issue W1](#open-issue-w1--window-geometry-glitch))
+  that still needs triage.
+- **B1, B2** — sync tests; **not yet run** (need a live SpacetimeDB server).
 
 ---
 
-## 1. Change summary & UI impact
+## 1. Remaining items & UI impact
 
 "UI change?" = did the change touch a file under `ui/` or a user-facing widget?
 
-| Item | What changed | Files | UI change? | Needs real-scenario test? |
-|------|--------------|-------|------------|---------------------------|
-| **S1** | Close leaked fd from `mkstemp` | `sync/engine.py` | No | No — deterministic, auto-verified |
-| **S2** | Sync config written `0600` | `sync/config.py` | No | Yes (light) — verify via the Settings save path |
-| **H1** | Atomic application save (`transaction()`) | `db/database.py`, `ui/wizard/step_preview.py` | **Yes** (wizard save) | Yes — real wizard save/edit flow |
-| **Dead code** | Removed unused string-template path, async PDF wrapper, dead language method | `templates/templates.py`, `pdf/convert.py`, `ui/wizard/step_preview.py` | **Yes** (dead method removed from wizard file; no behaviour change) | Yes — regression: generation + preview still work |
-| **M3** | Worker failures log full traceback | `ui/ui.py` | **Yes** (worker infra in the UI module; not a visible widget) | Yes — confirm traceback in console + short message in UI |
-| **S3** | Validate `snapshot_id` before SQL interpolation | `sync/client.py` | No | No — logic auto-verified; real pulls covered by B1 |
-| **M1** | Validate incoming DB before swap + rollback on failure | `sync/engine.py` | No (effect refreshes UI via `reload_views`) | Yes — real live-server pull (happy path) |
-| **M2** | Defer pull while a wizard is open | `ui/ui.py` | **Yes** (pull-apply guard) | Yes — real pull arriving with wizard open |
-| **L6** | Preview temp-file cleanup (atexit + close) | `pdf/display.py` | **Yes** (the preview widget) | Yes — temp-file lifecycle in the real app |
+| Item | What changed | Files | UI change? | Status |
+|------|--------------|-------|------------|--------|
+| **H1** | Atomic application save (`transaction()`) | `db/database.py`, `ui/wizard/step_preview.py` | **Yes** (wizard save) | Passed (A1); W1 open |
+| **Dead code** | Removed unused string-template path, async PDF wrapper, dead language method | `templates/templates.py`, `pdf/convert.py`, `ui/wizard/step_preview.py` | **Yes** (dead method removed; no behaviour change) | Passed (A2); W1 open |
+| **M1** | Validate incoming DB before swap + rollback on failure | `sync/engine.py` | No (effect refreshes UI via `reload_views`) | Pending (B1) |
+| **M2** | Defer pull while a wizard is open | `ui/ui.py` | **Yes** (pull-apply guard) | Pending (B2) |
+
+> Removed as done-and-clean: **S2** (config `0600`), **M3** (worker traceback
+> logging), **L6** (preview temp-file cleanup).
 
 ---
 
@@ -39,10 +40,9 @@ cd /home/sandbox/ResumeGen/dev
 - On first launch the app asks for a database folder (`resolve_db_path`). Use a
   throwaway folder for testing. To re-trigger the picker, delete
   `~/.resume_orchestrator`.
-- **Run from a terminal** for every test below — the sync/status messages
-  (`[SYNC] …`) print to stdout and the M3 tracebacks go to stderr.
+- **Run from a terminal** — the sync/status messages (`[SYNC] …`) print to stdout.
 
-**Sync tests (§3) additionally need** a running SpacetimeDB module and two app
+**Sync tests (§3.B) additionally need** a running SpacetimeDB module and two app
 instances that share one identity token. Follow `DEPLOYMENT.md` →
 "Deployment steps" and "Post-deployment verification". Simulate a second machine
 with a second checkout/instance under a separate `HOME` so it has its own
@@ -81,7 +81,9 @@ all round-trip. Nothing is silently dropped, and no error appears in the termina
 #### Results
 - Application was created successfully, edits are being made and stored correctly
 - Application preview and pdf generation work correctly
-- Window size seems to weird out when going from applications view to the wizard (?)
+- **H1 functionality: PASS.**
+- Note: window size "weirds out" when going from the Applications view to the
+  wizard → tracked as [W1](#open-issue-w1--window-geometry-glitch) (unrelated to H1).
 
 ---
 
@@ -103,78 +105,38 @@ in the terminal.
 - Application pdf renders correctly.
 - Application regenerates automatically on edits.
 - Application pdf can be downloaded correctly.
-- Hitting the download pdf button generates the same weird window size issue seen before.
+- **Dead-code regression: PASS.**
+- Note: the **Download** button reproduces the same window-geometry glitch →
+  tracked as [W1](#open-issue-w1--window-geometry-glitch) (unrelated to the removed code).
 
 ---
 
-#### A3 — L6: preview temp-file cleanup  · **[UI change]**
-Preview PDFs are written to per-widget temp files; cleanup was hardened
-(close-before-rewrite + `atexit` backstop + cleanup on `closeEvent`).
+#### Open issue W1 — window geometry glitch
+Surfaced while running A1 and A2. **Not a regression from this round's changes.**
 
-**Steps:**
-1. Note temp dir contents: `ls /tmp/*.pdf` (or `$TMPDIR`).
-2. In the wizard preview, trigger several regenerations (make multiple edits).
-   Confirm no errors and each regeneration updates the preview.
-3. Close the wizard and/or quit the app normally.
-4. Re-check the temp dir.
+**Symptoms:** the window size "weirds out" (a) when navigating from the
+Applications view into the wizard, and (b) when clicking the **Download** button
+in the preview step.
 
-**Expected:** repeated regeneration never errors (no file-lock failure); after the
-app exits, no leftover preview `*.pdf` temp files remain. While running, the temp
-file(s) should be owner-only (`-rw-------`).
+**Investigation:**
+- None of this round's diffs touch window geometry — no `resize` / `showMaximized`
+  / `showNormal` / `setFixedSize` / size-policy / splitter changes were made.
+  `_download` only writes the file and sets a status label; it cannot resize the
+  window. So this is a **pre-existing UI/layout quirk**, independent of
+  S1/S2/S3/H1/dead-code/M3/M1/M2/L6.
+- Likely contributing factors for a future fix (not yet confirmed against a live
+  GUI): the app runs `showMaximized()` (`main.py:240`) while child widgets set
+  large minimum widths (`step_preview.py:99` `setMinimumWidth(400)`,
+  `applications.py:438` `setMinimumWidth(420)`, etc.) and the embedded `QPdfView`
+  reports a page-sized `sizeHint`; when the `QStackedWidget` swaps pages the
+  top-level window may re-fit to those hints.
 
-#### Results
-- temp pdf file verified on /tmp/ directory when previewing an application
-- regenerations update the preview correspondingly
-- only one tmp file in the directory exists during application edits
-- temp pdf files removed on app exit
-- temp pdf permissions are RW for owner only
-
----
-
-#### A4 — M3: background failure logs a full traceback  · **[UI change: worker infra]**
-A worker exception used to surface only as a one-line string; it now also logs the
-full traceback while still delivering the short message to the UI.
-
-**Preconditions:** none — trigger a guaranteed sync failure.
-
-**Steps:**
-1. Settings → Sync: enable sync and set the server URL to something unreachable
-   (e.g. `https://127.0.0.1:9`), any module name, any token.
-2. Click **Sync now**.
-
-**Expected:**
-- The Settings status shows a short message like `Sync failed: Cannot reach sync
-  server: …`.
-- The **terminal (stderr)** shows a full Python traceback under
-  `background task failed` (from `logging.exception`) — not just the one-liner.
-  
-#### Results
-
-- sync to a non existing server errors
-- provides one line error message in ui
-- provides full trace stack on log
+**Next step:** triage as a standalone UI bug (out of scope for the fixes this doc
+verifies). No code change made yet.
 
 ---
 
-#### A5 — S2: sync config file is owner-only  · (no UI change; reached via Settings)
-The per-machine config holds the bearer token and must be written `0600`.
-
-**Steps:**
-1. Delete any existing `~/.resume_orchestrator_sync.json`.
-2. Settings → Sync: enter server URL, module, and token; enable sync and save
-   (or click Sync now). This writes the config through the real Settings path.
-3. `ls -l ~/.resume_orchestrator_sync.json`.
-
-**Expected:** permissions are `-rw-------` (0600). (POSIX only; on Windows this is
-a no-op by design.)
-
-#### Results
-
-- existing and newly created .resume_orchestrator_sync.json file had 0600 permission set.
-
----
-
-### B. Cross-machine sync (live SpacetimeDB required)
+### B. Cross-machine sync (live SpacetimeDB required) — NOT YET RUN
 
 #### B1 — M1: a normal pull applies safely  · (no UI change; triggers `reload_views`)
 Also exercises **S3** implicitly — real snapshot ids are uuid4 hex and must pass
@@ -193,7 +155,7 @@ the new validation.
 - Terminal shows `[SYNC] adopted server snapshot seq N`.
 - No `Unsafe snapshot_id` or integrity errors (confirms S3 accepts real ids and
   M1's `quick_check` passes on a healthy download).
-  
+
 #### Results
 - Tests not yet done
 
@@ -223,6 +185,9 @@ hit.
 > with a larger database (slower download) to widen the window. The deferral logic
 > itself is also covered by automated tests.
 
+#### Results
+- Tests not yet done
+
 ---
 
 ## 4. Already covered by automation — no manual test needed
@@ -231,7 +196,7 @@ hit.
 |------|--------------------|
 | **S1** — fd leak fix | Deterministic; verified by counting open fds across 200 `make_snapshot` calls (delta 0). No real-world variance. |
 | **S3** — `snapshot_id` validation | Pure input-validation logic; verified against injection strings, wrong lengths/case, empty, and a newline-bypass attempt, plus a valid uuid4 passing the guard. Real legitimate pulls are additionally exercised by **B1**. |
-| **H1** — atomic rollback edge | The failure path (mid-save error → full rollback, connection still usable, tx depth reset) is verified by automated tests, including a realistic `upsert_application` + bad-FK bullet override. The **happy path** is checked manually in **A1**. |
+| **H1** — atomic rollback edge | The failure path (mid-save error → full rollback, connection still usable, tx depth reset) is verified by automated tests, including a realistic `upsert_application` + bad-FK bullet override. The **happy path** was checked manually in **A1** (passed). |
 | **M1** — corrupt-download / rollback edges | Verified by automated tests: garbage bytes refused with the live DB untouched, and a simulated mid-swap `reopen()` failure restoring the backup. The **happy path** is checked manually in **B1**. |
 
 ---
