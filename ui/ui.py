@@ -227,6 +227,11 @@ class AppWindow(QMainWindow):
         if not fetched:
             print("[SYNC] pull: no newer snapshot on server")
             return
+        if self._wizard_widget is not None:
+            # Never swap the DB out from under an open wizard with unsaved edits;
+            # skip this apply — the next sync trigger will re-fetch and apply.
+            print("[SYNC] pull: wizard open, deferring snapshot apply")
+            return
         meta, db_bytes = fetched
 
         if self.engine.cfg.last_synced_seq == 0:

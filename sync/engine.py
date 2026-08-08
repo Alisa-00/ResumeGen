@@ -81,6 +81,26 @@ def make_snapshot(db_path: Path) -> tuple[bytes, str, list[bytes]]:
     return payload, sha, chunks
 
 
+def _check_sqlite_ok(db_path: Path) -> None:
+    """Raise ``SyncError`` unless ``db_path`` is a healthy SQLite file.
+
+    A pre-swap sanity gate so a truncated/garbage download can never replace a
+    working database. Uses ``PRAGMA quick_check`` (far cheaper than
+    ``integrity_check`` on a large DB, and this runs on the UI thread) over a
+    private connection.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute("PRAGMA quick_check").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as e:
+        raise SyncError(f"Downloaded snapshot is not a valid database: {e}") from e
+    if not row or row[0] != "ok":
+        raise SyncError(f"Downloaded snapshot failed quick_check: {row!r}")
+
+
 class SyncEngine:
     def __init__(self, db: Database, cfg: SyncConfig, client: SyncClient | None = None):
         self.db = db
@@ -174,24 +194,48 @@ class SyncEngine:
     def pull_apply(self, meta: SnapshotMeta, db_bytes: bytes, on_applied=None) -> None:
         """Replace the local DB with a fetched snapshot. MUST run on the UI thread.
 
-        Always backs up the current DB first (LWW is destructive and hard to undo).
+        Backs up the current DB first (LWW is destructive and hard to undo), and
+        validates the incoming bytes before swapping so a corrupt download can
+        never replace a working database. If the swap/reopen fails partway, the
+        backup is restored so the app is never left on a broken DB.
         """
         db_path = self.db.db_path
-        self.db.close()  # WAL is checkpointed on close
 
+        # 1. Stage + validate the incoming DB *before* touching the live one, so a
+        #    bad payload leaves the running database (and its open connection) intact.
+        incoming = db_path.with_name(f"{db_path.name}.incoming")
+        incoming.write_bytes(db_bytes)
+        try:
+            _check_sqlite_ok(incoming)
+        except Exception:
+            incoming.unlink(missing_ok=True)
+            raise
+
+        # 2. Swap it in, keeping a timestamped backup we can roll back to.
+        self.db.close()  # WAL is checkpointed on close
+        backup: Path | None = None
         if db_path.exists():
             ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            shutil.copy2(db_path, db_path.with_name(f"{db_path.name}.bak-{ts}"))
+            backup = db_path.with_name(f"{db_path.name}.bak-{ts}")
+            shutil.copy2(db_path, backup)
 
-        tmp = db_path.with_name(f"{db_path.name}.incoming")
-        tmp.write_bytes(db_bytes)
-        tmp.replace(db_path)  # atomic swap
+        def _clear_sidecars() -> None:
+            for sidecar in (f"{db_path.name}-wal", f"{db_path.name}-shm"):
+                db_path.with_name(sidecar).unlink(missing_ok=True)
 
-        # stale WAL/SHM belong to the old DB — remove so they don't corrupt the new one
-        for sidecar in (f"{db_path.name}-wal", f"{db_path.name}-shm"):
-            db_path.with_name(sidecar).unlink(missing_ok=True)
-
-        self.db.reopen()  # reconnect, migrate, re-stamp user_version
+        try:
+            incoming.replace(db_path)  # atomic swap
+            _clear_sidecars()  # stale WAL/SHM belong to the old DB
+            self.db.reopen()  # reconnect, migrate, re-stamp user_version
+        except Exception:
+            # Failed after we began swapping — restore the backup so the app is
+            # never left pointing at a broken/half-written database.
+            incoming.unlink(missing_ok=True)
+            if backup is not None and backup.exists():
+                shutil.copy2(backup, db_path)
+                _clear_sidecars()
+            self.db.reopen()
+            raise
 
         # Store OUR canonical hash of the adopted (and possibly migrated) DB, not
         # the remote payload hash. make_snapshot is machine-dependent (page layout),
