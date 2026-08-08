@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -50,7 +51,9 @@ def _consistent_db_bytes(db_path: Path) -> bytes:
     Uses a private connection (not the app's live one), so it is thread-safe and
     correctly captures data still sitting in the WAL.
     """
-    tmp = Path(tempfile.mkstemp(suffix=".db")[1])
+    fd, tmp_name = tempfile.mkstemp(suffix=".db")
+    os.close(fd)  # we only need the path; sqlite opens its own handle below
+    tmp = Path(tmp_name)
     src = sqlite3.connect(db_path)
     try:
         dst = sqlite3.connect(tmp)

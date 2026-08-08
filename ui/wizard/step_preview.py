@@ -1191,17 +1191,6 @@ class _LanguagesContent(QWidget):
         """Return list of language data for serialization."""
         return [row.get_data() for row in self._rows]
 
-    def get_proficiency_overrides(self) -> dict[int, str]:
-        """Return map of language ID to proficiency override."""
-        overrides = {}
-        for row in self._rows:
-            lang_id = row._original.get("id")
-            if lang_id is not None:
-                ov = row.get_proficiency_override()
-                if ov is not None:
-                    overrides[lang_id] = ov
-        return overrides
-
 
 class _KeywordsContent(QWidget):
     changed = Signal()
@@ -1927,9 +1916,8 @@ class StepPreview(QWidget):
         s = self._get_state()
         jd = self.job_data
 
-        # Use explicit transaction for atomicity
-        self.db._conn.execute("BEGIN")
-        try:
+        # Group all writes so a mid-save failure rolls back cleanly.
+        with self.db.transaction():
             self.application_id = self.db.upsert_application(
                 profile_id=jd["profile_id"],
                 status_id=jd.get("status_id", 1),
@@ -1978,17 +1966,13 @@ class StepPreview(QWidget):
                 id=self.application_id,
             )
             # save the full explicit keyword list so reopening uses it directly
-            self.db._conn.execute(
+            self.db.execute(
                 "UPDATE job_application SET keyword_list=? WHERE id=?",
                 (json.dumps(s["keyword_ids"]), self.application_id),
             )
             self.db.clear_bullet_overrides(self.application_id)
             for bp_id, text in s["bullet_overrides"].items():
                 self.db.set_bullet_override(self.application_id, bp_id, text)
-            self.db._conn.commit()
-        except Exception:
-            self.db._conn.rollback()
-            raise
 
         self.saved.emit(self.application_id)
         self._status_lbl.setText("Saved")

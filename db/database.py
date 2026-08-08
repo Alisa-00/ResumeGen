@@ -4,6 +4,7 @@ Synchronous SQLite interface via stdlib sqlite3.
 """
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 from version import APP_VERSION, decode_version, encode_version
@@ -204,6 +205,7 @@ class Database:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        self._tx_depth = 0  # >0 while inside a transaction() block
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -351,8 +353,29 @@ class Database:
 
     def execute(self, sql: str, params: tuple = ()) -> int:
         cur = self.conn.execute(sql, params)
-        self.conn.commit()
+        if self._tx_depth == 0:
+            self.conn.commit()  # suspended inside a transaction() block
         return cur.lastrowid
+
+    @contextmanager
+    def transaction(self):
+        """Group several writes into one atomic unit.
+
+        Inside the block the per-statement commits normally done by ``execute``
+        are suspended, so an exception rolls the whole block back instead of
+        leaving a partial write. Reads (``fetch_*``) still work as usual.
+        """
+        self._tx_depth += 1
+        try:
+            yield
+        except BaseException:
+            self._tx_depth = 0
+            self.conn.rollback()
+            raise
+        else:
+            self._tx_depth -= 1
+            if self._tx_depth == 0:
+                self.conn.commit()
 
     # ------------------------------------------------------------------
     # contact

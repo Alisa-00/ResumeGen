@@ -10,6 +10,7 @@ it would be clobbered every time a remote snapshot is pulled.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -66,4 +67,11 @@ class SyncConfig:
         path = path or CONFIG_PATH
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(asdict(self), indent=2))
+        # Contains a bearer identity token — restrict to owner before the
+        # atomic replace so the final file is never briefly world-readable.
+        # (No-op on filesystems/OSes without POSIX modes, e.g. Windows.)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
         tmp.replace(path)  # atomic on the same filesystem
