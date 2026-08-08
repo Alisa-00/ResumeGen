@@ -78,6 +78,11 @@ all round-trip. Nothing is silently dropped, and no error appears in the termina
 > automated tests and is not easily reproducible by hand; this case verifies the
 > happy-path regression of the refactor.
 
+#### Results
+- Application was created successfully, edits are being made and stored correctly
+- Application preview and pdf generation work correctly
+- Window size seems to weird out when going from applications view to the wizard (?)
+
 ---
 
 #### A2 — Dead-code regression: generation + preview still work  · **[UI change: dead method removed]**
@@ -93,6 +98,12 @@ WeasyPrint) or the preview.
 **Expected:** the PDF renders in the preview pane, regenerates on edits, and the
 downloaded file opens correctly in an external viewer. No import/attribute errors
 in the terminal.
+
+#### Results
+- Application pdf renders correctly.
+- Application regenerates automatically on edits.
+- Application pdf can be downloaded correctly.
+- Hitting the download pdf button generates the same weird window size issue seen before.
 
 ---
 
@@ -110,6 +121,13 @@ Preview PDFs are written to per-widget temp files; cleanup was hardened
 **Expected:** repeated regeneration never errors (no file-lock failure); after the
 app exits, no leftover preview `*.pdf` temp files remain. While running, the temp
 file(s) should be owner-only (`-rw-------`).
+
+#### Results
+- temp pdf file verified on /tmp/ directory when previewing an application
+- regenerations update the preview correspondingly
+- only one tmp file in the directory exists during application edits
+- temp pdf files removed on app exit
+- temp pdf permissions are RW for owner only
 
 ---
 
@@ -129,6 +147,12 @@ full traceback while still delivering the short message to the UI.
   server: …`.
 - The **terminal (stderr)** shows a full Python traceback under
   `background task failed` (from `logging.exception`) — not just the one-liner.
+  
+#### Results
+
+- sync to a non existing server errors
+- provides one line error message in ui
+- provides full trace stack on log
 
 ---
 
@@ -143,6 +167,10 @@ The per-machine config holds the bearer token and must be written `0600`.
 
 **Expected:** permissions are `-rw-------` (0600). (POSIX only; on Windows this is
 a no-op by design.)
+
+#### Results
+
+- existing and newly created .resume_orchestrator_sync.json file had 0600 permission set.
 
 ---
 
@@ -165,6 +193,9 @@ the new validation.
 - Terminal shows `[SYNC] adopted server snapshot seq N`.
 - No `Unsafe snapshot_id` or integrity errors (confirms S3 accepts real ids and
   M1's `quick_check` passes on a healthy download).
+  
+#### Results
+- Tests not yet done
 
 ---
 
