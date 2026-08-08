@@ -5,6 +5,8 @@ Main window. Manages the primary nav stack and wizard overlay.
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -29,6 +31,8 @@ from ui.views.templates import TemplatesView
 from ui.views.settings import SettingsView
 from ui.views.applications import ApplicationsView
 from ui.widgets import PlaceholderView, primary_btn
+
+_log = logging.getLogger(__name__)
 
 
 NAV_ITEMS: list[tuple[str, str]] = [
@@ -80,6 +84,7 @@ class _Task(QRunnable):
         try:
             self.signals.finished.emit(self.fn(*self.args, **self.kwargs))
         except Exception as e:
+            _log.exception("background task failed")  # keep the full traceback
             self.signals.error.emit(str(e))
 
 

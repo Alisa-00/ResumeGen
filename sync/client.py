@@ -17,6 +17,7 @@ sync verification steps).
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -169,6 +170,10 @@ class SpacetimeHttpClient(SyncClient):
         )
 
     def fetch_payload(self, meta: SnapshotMeta) -> bytes:
+        # snapshot_id is interpolated into SQL (SpacetimeDB's HTTP SQL API has no
+        # bind params); it is always a uuid4 hex, so reject anything that isn't.
+        if not re.fullmatch(r"[0-9a-f]{32}", meta.snapshot_id):
+            raise SyncError(f"Unsafe snapshot_id from server: {meta.snapshot_id!r}")
         rows = self._sql(
             "SELECT idx, data FROM snapshot_chunk "
             f"WHERE snapshot_id = '{meta.snapshot_id}'"

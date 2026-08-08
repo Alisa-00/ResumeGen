@@ -21,7 +21,7 @@ def resolve_db_path() -> Path | None:
     if config_file.exists():
         stored = config_file.read_text().strip()
         if stored:
-            return Path(stored)
+            return Path(stored).expanduser()
 
     parent = QWidget()
 
