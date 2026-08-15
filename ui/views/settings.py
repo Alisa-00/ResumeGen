@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
 )
 
 from db.database import Database
-from ui.widgets import section_title, hline, primary_btn, field, check_box
+from ui.widgets import section_title, hline, primary_btn, field, check_box, scrollable
+from sync.config import SyncConfig
+from version import APP_VERSION, version_str
 
 DATE_FORMAT_OPTIONS: list[tuple[str, str]] = [
     ("YYYY", "Year only (2020)"),
@@ -40,10 +42,18 @@ SECTION_LABELS: dict[str, str] = {
 # ── section order widget ──────────────────────────────────────────────
 
 
+ROW_HEIGHT = 52
+
+
 class SectionOrderWidget(QWidget):
     def __init__(self, order: list[str], enabled: dict[str, bool], parent=None):
         super().__init__(parent)
         self._items: list[tuple[str, QCheckBox]] = []
+
+        # Never let an ancestor layout squeeze this widget: the rows carry fixed
+        # heights, so compression would collapse the checkboxes to nothing while
+        # the ▲▼ buttons stayed put and overlapped.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 4, 0, 4)
@@ -61,7 +71,7 @@ class SectionOrderWidget(QWidget):
         up_btn = QPushButton("▲")
         dn_btn = QPushButton("▼")
         for btn in (up_btn, dn_btn):
-            btn.setFixedSize(52, 52)
+            btn.setFixedSize(ROW_HEIGHT, ROW_HEIGHT)
             btn.setStyleSheet(
                 "QPushButton {"
                 "  font-size: 22px; color: #89b4fa;"
@@ -72,41 +82,40 @@ class SectionOrderWidget(QWidget):
                 "QPushButton:hover { background-color: #45475a; }"
             )
 
-        up_btn.clicked.connect(lambda _=None, k=key: self._move(k, -1))
-        dn_btn.clicked.connect(lambda _=None, k=key: self._move(k, +1))
+        # Rows keep their position for the widget's lifetime — reordering swaps
+        # the contents — so binding the buttons to the row index stays correct.
+        pos = len(self._items)
+        up_btn.clicked.connect(lambda _=None, i=pos: self._move(i, -1))
+        dn_btn.clicked.connect(lambda _=None, i=pos: self._move(i, +1))
 
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
-        row.addWidget(up_btn)
-        row.addWidget(dn_btn)
-        row.addWidget(cb, 1)
+        row = QWidget()
+        row.setFixedHeight(ROW_HEIGHT)
+        row_l = QHBoxLayout(row)
+        row_l.setContentsMargins(0, 0, 0, 0)
+        row_l.setSpacing(12)
+        row_l.addWidget(up_btn)
+        row_l.addWidget(dn_btn)
+        row_l.addWidget(cb, 1)
 
         self._items.append((key, cb))
-        self._layout.addLayout(row)
+        self._layout.addWidget(row)
 
-    def _move(self, key: str, delta: int):
-        idx = next((i for i, (k, _) in enumerate(self._items) if k == key), None)
-        if idx is None:
-            return
+    def _move(self, idx: int, delta: int):
         new_idx = idx + delta
-        if new_idx < 0 or new_idx >= len(self._items):
+        if not (0 <= idx < len(self._items) and 0 <= new_idx < len(self._items)):
             return
 
-        state = [(k, cb.isChecked()) for k, cb in self._items]
-        state[idx], state[new_idx] = state[new_idx], state[idx]
+        key_a, cb_a = self._items[idx]
+        key_b, cb_b = self._items[new_idx]
 
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            if item.layout():
-                while item.layout().count():
-                    w = item.layout().takeAt(0).widget()
-                    if w:
-                        w.deleteLater()
+        checked_a = cb_a.isChecked()
+        cb_a.setText(SECTION_LABELS.get(key_b, key_b))
+        cb_a.setChecked(cb_b.isChecked())
+        cb_b.setText(SECTION_LABELS.get(key_a, key_a))
+        cb_b.setChecked(checked_a)
 
-        self._items.clear()
-        for k, enabled in state:
-            self._append(k, enabled)
+        self._items[idx] = (key_b, cb_a)
+        self._items[new_idx] = (key_a, cb_b)
 
     def get_order(self) -> list[str]:
         return [k for k, _ in self._items]
@@ -119,13 +128,19 @@ class SectionOrderWidget(QWidget):
 
 
 class SettingsView(QWidget):
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, window=None, parent=None):
         super().__init__(parent)
         self.db = db
+        self.window_ = window  # AppWindow, for triggering background sync
 
         settings = self.db.get_settings() or {}
 
-        outer = QVBoxLayout(self)
+        # The page is taller than the window on most screens (the UI runs at a
+        # ~2.5x font scale), so it lives in a scroll area — without one the
+        # layout compresses every child below its minimum and the lower half
+        # (Sync) becomes unreachable.
+        inner = QWidget()
+        outer = QVBoxLayout(inner)
         outer.setContentsMargins(24, 16, 24, 16)
         outer.setSpacing(12)
 
@@ -213,7 +228,119 @@ class SettingsView(QWidget):
         save_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         save_btn.clicked.connect(self._save)
         outer.addWidget(save_btn)
+
+        self._build_sync_section(outer)
         outer.addStretch()
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(scrollable(inner))
+
+    # ── sync ──────────────────────────────────────────────────────────
+
+    def _build_sync_section(self, outer: QVBoxLayout):
+        """Sync config is stored OUTSIDE the database (SyncConfig), so it is
+        edited here directly rather than through db.save_settings()."""
+        # share the engine's live config object when available so changes here
+        # are immediately seen by background sync
+        engine = getattr(self.window_, "engine", None)
+        self._sync_cfg: SyncConfig = engine.cfg if engine else SyncConfig.load()
+
+        outer.addSpacing(4)
+        outer.addWidget(hline())
+        outer.addWidget(section_title("Sync"))
+
+        info = QLabel(
+            "Sync uploads a snapshot of your whole database to a central "
+            "SpacetimeDB server and pulls the latest compatible snapshot. It is "
+            "optional — the app works fully offline. Latest-write-wins."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #a6adc8;")
+        outer.addWidget(info)
+
+        self._sync_enabled = check_box("Enable sync")
+        self._sync_enabled.setChecked(self._sync_cfg.sync_enabled)
+        outer.addWidget(self._sync_enabled)
+
+        outer.addWidget(QLabel("Sync server URL  (e.g. https://maincloud.spacetimedb.com)"))
+        self._sync_url = field("https://…")
+        self._sync_url.setText(self._sync_cfg.server_url)
+        outer.addWidget(self._sync_url)
+
+        outer.addWidget(QLabel("Module / database name"))
+        self._sync_module = field("my-resume-sync")
+        self._sync_module.setText(self._sync_cfg.module_name)
+        outer.addWidget(self._sync_module)
+
+        outer.addWidget(QLabel("Identity token  (from `spacetime login`)"))
+        self._sync_token = field("paste SpacetimeDB identity token")
+        self._sync_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._sync_token.setText(self._sync_cfg.identity_token)
+        outer.addWidget(self._sync_token)
+
+        btn_row = QHBoxLayout()
+        save_sync_btn = primary_btn("Save Sync Settings")
+        save_sync_btn.clicked.connect(self._save_sync)
+        self._sync_now_btn = QPushButton("Sync now")
+        self._sync_now_btn.clicked.connect(self._sync_now)
+        btn_row.addWidget(save_sync_btn)
+        btn_row.addWidget(self._sync_now_btn)
+        btn_row.addStretch()
+        outer.addLayout(btn_row)
+
+        self._sync_status = QLabel(self._sync_status_text())
+        self._sync_status.setWordWrap(True)
+        self._sync_status.setStyleSheet("color: #a6adc8;")
+        outer.addWidget(self._sync_status)
+
+    def _sync_status_text(self) -> str:
+        ver = version_str(APP_VERSION)
+        last = self._sync_cfg.last_synced_at or "never"
+        return f"App version {ver} · last synced: {last}"
+
+    def _save_sync(self):
+        url = self._sync_url.text().strip().rstrip("/")
+        if url and "://" not in url:
+            url = "https://" + url  # bare hostname → assume HTTPS
+            self._sync_url.setText(url)
+        if url and not url.startswith(("http://", "https://")):
+            QMessageBox.warning(
+                self, "Sync",
+                f"Server URL must start with http:// or https:// — got: {url}",
+            )
+            return False
+        self._sync_cfg.sync_enabled = self._sync_enabled.isChecked()
+        self._sync_cfg.server_url = url
+        self._sync_cfg.module_name = self._sync_module.text().strip()
+        self._sync_cfg.identity_token = self._sync_token.text().strip()
+        self._sync_cfg.save()
+
+        engine = getattr(self.window_, "engine", None)
+        if engine:
+            engine.reset_client()  # url/token may have changed
+        QMessageBox.information(self, "Saved", "Sync settings saved.")
+        if self._sync_cfg.is_ready() and self.window_ is not None:
+            # Sync just became usable on this machine — check the server now
+            # (first-sync choice / newer snapshot) instead of waiting for the
+            # next launch, whose startup pull has already run.
+            self.window_.start_initial_sync()
+        return True
+
+    def _sync_now(self):
+        if not self._save_sync():  # persist any edits first
+            return
+        if not (self.window_ and getattr(self.window_, "engine", None)):
+            QMessageBox.information(self, "Sync", "Sync is unavailable.")
+            return
+        self._sync_status.setText("Syncing…")
+        self._sync_now_btn.setEnabled(False)
+
+        def on_status(msg: str):
+            self._sync_now_btn.setEnabled(True)
+            self._sync_status.setText(f"{msg}\n{self._sync_status_text()}")
+
+        self.window_.sync_now(on_status=on_status)
 
     def _load_templates(self, default_id: int | None = None):
         self._tmpl_combo.clear()

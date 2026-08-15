@@ -4,7 +4,10 @@ Synchronous SQLite interface via stdlib sqlite3.
 """
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
+
+from version import APP_VERSION, decode_version, encode_version
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -202,6 +205,7 @@ class Database:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        self._tx_depth = 0  # >0 while inside a transaction() block
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -217,11 +221,35 @@ class Database:
         self._conn.executescript(SCHEMA_SQL)
         self._conn.commit()
         self._migrate()
+        self._stamp_version()
+
+    def reopen(self) -> None:
+        """Close (checkpointing WAL) and reconnect. Used after a sync swaps the file."""
+        self.close()
+        self.connect()
 
     def close(self) -> None:
         if self._conn:
             self._conn.close()
             self._conn = None
+
+    def _stamp_version(self) -> None:
+        """Bump the file's PRAGMA user_version up to APP_VERSION (never down).
+
+        The version travels with the file, so a snapshot adopted from another
+        machine keeps its own (possibly higher) version. Syncing reads this to
+        gate which snapshots are compatible — see the sync module.
+        """
+        current = self._conn.execute("PRAGMA user_version").fetchone()[0]
+        target = encode_version(APP_VERSION)
+        if current < target:
+            self._conn.execute(f"PRAGMA user_version = {target}")
+            self._conn.commit()
+
+    def data_version(self) -> tuple[int, int]:
+        """The (major, minor) schema version stamped in the DB file."""
+        packed = self.conn.execute("PRAGMA user_version").fetchone()[0]
+        return decode_version(packed)
 
     def _migrate(self) -> None:
         """Add any columns that exist in the schema but not in the live DB."""
@@ -325,8 +353,29 @@ class Database:
 
     def execute(self, sql: str, params: tuple = ()) -> int:
         cur = self.conn.execute(sql, params)
-        self.conn.commit()
+        if self._tx_depth == 0:
+            self.conn.commit()  # suspended inside a transaction() block
         return cur.lastrowid
+
+    @contextmanager
+    def transaction(self):
+        """Group several writes into one atomic unit.
+
+        Inside the block the per-statement commits normally done by ``execute``
+        are suspended, so an exception rolls the whole block back instead of
+        leaving a partial write. Reads (``fetch_*``) still work as usual.
+        """
+        self._tx_depth += 1
+        try:
+            yield
+        except BaseException:
+            self._tx_depth = 0
+            self.conn.rollback()
+            raise
+        else:
+            self._tx_depth -= 1
+            if self._tx_depth == 0:
+                self.conn.commit()
 
     # ------------------------------------------------------------------
     # contact

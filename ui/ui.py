@@ -5,7 +5,10 @@ Main window. Manages the primary nav stack and wizard overlay.
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -30,6 +33,8 @@ from ui.views.settings import SettingsView
 from ui.views.applications import ApplicationsView
 from ui.widgets import PlaceholderView, primary_btn
 
+_log = logging.getLogger(__name__)
+
 
 NAV_ITEMS: list[tuple[str, str]] = [
     ("Contact", "contact"),
@@ -45,7 +50,7 @@ NAV_ITEMS: list[tuple[str, str]] = [
 ]
 
 
-def _build_view(key: str, db: Database) -> QWidget:
+def _build_view(key: str, db: Database, window: "AppWindow") -> QWidget:
     return {
         "contact": lambda: ContactView(db),
         "experience": lambda: ExperienceView(db),
@@ -56,7 +61,7 @@ def _build_view(key: str, db: Database) -> QWidget:
         "profiles": lambda: ProfilesView(db),
         "templates": lambda: TemplatesView(db),
         "applications": lambda: ApplicationsView(db),
-        "settings": lambda: SettingsView(db),
+        "settings": lambda: SettingsView(db, window=window),
     }.get(key, lambda: PlaceholderView(key))()
 
 
@@ -80,6 +85,7 @@ class _Task(QRunnable):
         try:
             self.signals.finished.emit(self.fn(*self.args, **self.kwargs))
         except Exception as e:
+            _log.exception("background task failed")  # keep the full traceback
             self.signals.error.emit(str(e))
 
 
@@ -87,13 +93,34 @@ class _Task(QRunnable):
 
 
 class AppWindow(QMainWindow):
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, engine=None, parent=None):
         super().__init__(parent)
         self.db = db
+        self.engine = engine
         self._wizard_widget = None
+        self._tasks: list[_Task] = []  # keep refs so QRunnables aren't GC'd
         self.setWindowTitle("Resume Orchestrator")
         self.resize(1400, 900)
         self._build_ui()
+
+    def resizeEvent(self, event):
+        """Safety net: never let the window grow larger than the screen it's on.
+
+        showMaximized() does not shrink a window below its central widget's minimum
+        size hint, so a dense view could otherwise push the window past the screen
+        edges on small (laptop) displays. Clamp to the current screen's available
+        area, guarding against resize recursion.
+        """
+        super().resizeEvent(event)
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        avail = screen.availableSize()
+        size = self.size()
+        w = min(size.width(), avail.width())
+        h = min(size.height(), avail.height())
+        if w != size.width() or h != size.height():
+            self.resize(w, h)
 
     def _build_ui(self):
         root = QWidget()
@@ -122,13 +149,7 @@ class AppWindow(QMainWindow):
         np_l.setContentsMargins(0, 0, 0, 0)
 
         self._content_stack = QStackedWidget()
-        for _, key in NAV_ITEMS:
-            self._content_stack.addWidget(_build_view(key, self.db))
-
-        apps_idx = next(i for i, (_, k) in enumerate(NAV_ITEMS) if k == "applications")
-        apps_view = self._content_stack.widget(apps_idx)
-        apps_view.new_application_requested.connect(lambda: self._open_wizard(None))
-        apps_view.open_application_requested.connect(self._open_wizard)
+        self._populate_views()
 
         np_l.addWidget(self._content_stack)
 
@@ -141,6 +162,126 @@ class AppWindow(QMainWindow):
         root_l.addWidget(self._main_stack, 1)
 
         self._nav.setCurrentRow(0)
+
+    def _populate_views(self):
+        """(Re)build the content stack against the live db connection."""
+        while self._content_stack.count():
+            w = self._content_stack.widget(0)
+            self._content_stack.removeWidget(w)
+            w.deleteLater()
+
+        for _, key in NAV_ITEMS:
+            self._content_stack.addWidget(_build_view(key, self.db, self))
+
+        apps_idx = next(i for i, (_, k) in enumerate(NAV_ITEMS) if k == "applications")
+        apps_view = self._content_stack.widget(apps_idx)
+        apps_view.new_application_requested.connect(lambda: self._open_wizard(None))
+        apps_view.open_application_requested.connect(self._open_wizard)
+
+    def reload_views(self):
+        """Rebuild views after the underlying db file has been swapped by a sync."""
+        current = self._content_stack.currentIndex()
+        self._populate_views()
+        self._content_stack.setCurrentIndex(max(0, current))
+
+    # ── background sync ───────────────────────────────────────────────
+
+    def _submit(self, fn, on_done=None, on_error=None):
+        """Run ``fn`` on the thread pool, delivering results back on the UI thread."""
+        task = _Task(fn)
+        if on_done:
+            task.signals.finished.connect(on_done)
+        task.signals.error.connect(on_error or (lambda msg: print(f"[SYNC] {msg}")))
+        task.signals.finished.connect(lambda *_: self._tasks.remove(task))
+        task.signals.error.connect(lambda *_: self._tasks.remove(task))
+        self._tasks.append(task)
+        QThreadPool.globalInstance().start(task)
+
+    def start_initial_sync(self):
+        """Best-effort pull on launch. Silent on failure — local use never blocks."""
+        if not (self.engine and self.engine.available()):
+            return
+        self._submit(self.engine.pull_fetch, on_done=self._apply_pull)
+
+    def sync_now(self, on_status=None):
+        """Manual sync: push then pull. ``on_status`` (optional) gets a result string."""
+        if not (self.engine and self.engine.available()):
+            if on_status:
+                on_status("Sync is not configured.")
+            return
+
+        def work():
+            if self.engine.cfg.last_synced_seq == 0:
+                # Never synced: look at the server BEFORE pushing, so existing
+                # history triggers the first-sync choice instead of being
+                # buried under a stale upload.
+                fetched = self.engine.pull_fetch()
+                if fetched:
+                    return None, fetched  # push decision deferred to the dialog
+                return self.engine.push(), None  # server empty — normal bootstrap
+            pushed = self.engine.push()
+            return pushed, self.engine.pull_fetch()
+
+        def done(result):
+            pushed, fetched = result
+            self._apply_pull(fetched)
+            if on_status:
+                if pushed is None:
+                    on_status("First sync complete.")
+                    return
+                bits = []
+                bits.append("pushed local changes" if pushed else "nothing to push")
+                bits.append("pulled update" if fetched else "no remote update")
+                on_status("Sync complete: " + ", ".join(bits) + ".")
+
+        def failed(msg):
+            if on_status:
+                on_status(f"Sync failed: {msg}")
+            else:
+                print(f"[SYNC] {msg}")
+
+        self._submit(work, on_done=done, on_error=failed)
+
+    def _apply_pull(self, fetched):
+        """UI-thread application of a fetched snapshot (db file swap + reload)."""
+        if not fetched:
+            print("[SYNC] pull: no newer snapshot on server")
+            return
+        if self._wizard_widget is not None:
+            # Never swap the DB out from under an open wizard with unsaved edits;
+            # skip this apply — the next sync trigger will re-fetch and apply.
+            print("[SYNC] pull: wizard open, deferring snapshot apply")
+            return
+        meta, db_bytes = fetched
+
+        if self.engine.cfg.last_synced_seq == 0:
+            # First-ever sync on this machine and the server already has
+            # history — let the user pick a winner instead of guessing.
+            box = QMessageBox(self)
+            box.setWindowTitle("Sync — first connection")
+            box.setText(
+                f"The sync server already has data (snapshot seq {meta.seq}).\n\n"
+                "Download it and replace this machine's data (the local database "
+                "is backed up first), or keep this machine's data and upload it "
+                "to the server?"
+            )
+            download = box.addButton("Download server copy", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Keep local and upload", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(download)
+            box.exec()
+            if box.clickedButton() is not download:
+                print("[SYNC] first sync: keeping local data, uploading")
+                self._submit(
+                    lambda: self.engine.push(first_sync_ok=True),
+                    on_done=lambda pushed: print(
+                        "[SYNC] first sync: uploaded local data"
+                        if pushed else "[SYNC] first sync: nothing to upload"
+                    ),
+                )
+                return
+
+        self.engine.pull_apply(meta, db_bytes, on_applied=self.reload_views)
+        print(f"[SYNC] adopted server snapshot seq {meta.seq}")
 
     def _on_nav_change(self, row: int):
         if self._main_stack.currentIndex() == 1:

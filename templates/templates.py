@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 
-from jinja2 import Environment, FileSystemLoader, BaseLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 TEMPLATES_DIR = Path(__file__).parent / "html"
 TEMPLATES_DIR.mkdir(exist_ok=True)
@@ -42,37 +42,11 @@ _fs_env = Environment(
 _configure_env(_fs_env)
 
 
-# ── string loader ────────────────────────────────────────────────────
-
-
-class _StringLoader(BaseLoader):
-    def __init__(self, source: str):
-        self._source = source
-
-    def get_source(self, environment, template):
-        return self._source, None, lambda: True
-
-
-def _make_string_env(source: str) -> Environment:
-    env = Environment(
-        loader=_StringLoader(source),
-        autoescape=select_autoescape(["html"]),
-    )
-    _configure_env(env)
-    return env
-
-
 # ── public API ───────────────────────────────────────────────────────
 
 
 def render_from_file(template_name: str, context: dict) -> str:
     tmpl = _fs_env.get_template(template_name)
-    return tmpl.render(**context)
-
-
-def render_from_string(html_source: str, context: dict) -> str:
-    env = _make_string_env(html_source)
-    tmpl = env.get_template("template")
     return tmpl.render(**context)
 
 

@@ -435,7 +435,11 @@ class _DetailsPanel(QWidget):
         super().__init__(parent)
         self.db = db
         self._app_id: int | None = None
-        self.setMinimumWidth(420)
+        # Keep this modest: the panel is shown side-by-side with the board, so its
+        # minimum width adds directly to the window's minimum. A large value (was
+        # 420) pushed the whole window past a laptop screen when an application was
+        # selected. Content still expands toward the 540 maximum when there's room.
+        self.setMinimumWidth(300)
         self.setMaximumWidth(540)
         self.setStyleSheet("""
             QWidget {
@@ -864,6 +868,13 @@ class ApplicationsView(QWidget):
         # top bar with title and buttons
         top = QHBoxLayout()
         self._title_lbl = section_title("Job Applications")
+        # Don't let the (non-wrapping) title's full text width drive the window's
+        # minimum width. With Ignored it renders normally when there's room but
+        # yields width when the window is cramped, so showing the details panel on a
+        # laptop screen no longer forces the window wider than the display.
+        self._title_lbl.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
         top.addWidget(self._title_lbl)
         top.addStretch()
         new_btn = primary_btn("+ New Application")

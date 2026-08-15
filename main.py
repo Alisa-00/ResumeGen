@@ -5,12 +5,21 @@ Entry point. Handles DB path resolution, DB init, and app launch.
 
 from __future__ import annotations
 import sys
+import threading
 from pathlib import Path
+
+# Upper bound on how long a clean shutdown will wait for the best-effort final
+# push before exiting anyway. Keeps the app from appearing frozen on close when
+# the sync server is slow or unreachable (the push runs on a daemon thread, so a
+# push still in flight past this bound cannot hold the process open).
+_SHUTDOWN_PUSH_TIMEOUT = 10.0
 
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 
 from db.database import Database
 from ui.ui import AppWindow
+from sync.config import SyncConfig
+from sync.engine import SyncEngine
 
 
 def resolve_db_path() -> Path | None:
@@ -19,7 +28,7 @@ def resolve_db_path() -> Path | None:
     if config_file.exists():
         stored = config_file.read_text().strip()
         if stored:
-            return Path(stored)
+            return Path(stored).expanduser()
 
     parent = QWidget()
 
@@ -231,10 +240,31 @@ def main():
     db = Database(db_path)
     db.connect()
 
-    window = AppWindow(db=db)
+    sync_cfg = SyncConfig.load()
+    engine = SyncEngine(db, sync_cfg)
+
+    window = AppWindow(db=db, engine=engine)
     window.showMaximized()
+    window.start_initial_sync()  # best-effort background pull
 
     exit_code = app.exec()
+
+    # Best-effort final push so this machine's latest data reaches the server.
+    # Never let a slow/unreachable server or a sync failure affect a clean
+    # shutdown: run the push on a daemon thread and wait only a bounded time.
+    if engine.available():
+        def _final_push() -> None:
+            try:
+                engine.push()
+            except Exception as e:  # noqa: BLE001 — shutdown must not crash
+                print(f"[SYNC] push on close failed: {e}")
+
+        pusher = threading.Thread(target=_final_push, daemon=True)
+        pusher.start()
+        pusher.join(_SHUTDOWN_PUSH_TIMEOUT)
+        if pusher.is_alive():
+            print("[SYNC] push on close timed out; exiting anyway")
+
     db.close()
     sys.exit(exit_code)
 
