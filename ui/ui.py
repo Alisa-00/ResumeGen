@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -101,6 +102,25 @@ class AppWindow(QMainWindow):
         self.setWindowTitle("Resume Orchestrator")
         self.resize(1400, 900)
         self._build_ui()
+
+    def resizeEvent(self, event):
+        """Safety net: never let the window grow larger than the screen it's on.
+
+        showMaximized() does not shrink a window below its central widget's minimum
+        size hint, so a dense view could otherwise push the window past the screen
+        edges on small (laptop) displays. Clamp to the current screen's available
+        area, guarding against resize recursion.
+        """
+        super().resizeEvent(event)
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        avail = screen.availableSize()
+        size = self.size()
+        w = min(size.width(), avail.width())
+        h = min(size.height(), avail.height())
+        if w != size.width() or h != size.height():
+            self.resize(w, h)
 
     def _build_ui(self):
         root = QWidget()

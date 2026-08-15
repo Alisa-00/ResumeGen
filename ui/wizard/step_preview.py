@@ -1547,9 +1547,18 @@ class StepPreview(QWidget):
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(left_inner)
         left_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Allow horizontal scrolling when the pane is narrow instead of forcing the
+        # editor content's (large, 2.5x-scaled) minimum width onto the window. With
+        # ScrollBarAlwaysOff the content min width became an un-shrinkable floor that
+        # pushed the whole window wider than a laptop screen.
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Modest per-pane minimums so setChildrenCollapsible(False) pins the splitter
+        # to a small floor (≈ nav 240 + 320 + 280 ≈ 840px total) rather than to the
+        # panes' natural content minimums.
+        left_scroll.setMinimumWidth(320)
 
         self._preview = PdfPreviewWidget()
+        self._preview.setMinimumWidth(280)
         splitter.addWidget(left_scroll)
         splitter.addWidget(self._preview)
         splitter.setSizes([600, 400])
