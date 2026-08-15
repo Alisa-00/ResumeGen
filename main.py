@@ -5,7 +5,14 @@ Entry point. Handles DB path resolution, DB init, and app launch.
 
 from __future__ import annotations
 import sys
+import threading
 from pathlib import Path
+
+# Upper bound on how long a clean shutdown will wait for the best-effort final
+# push before exiting anyway. Keeps the app from appearing frozen on close when
+# the sync server is slow or unreachable (the push runs on a daemon thread, so a
+# push still in flight past this bound cannot hold the process open).
+_SHUTDOWN_PUSH_TIMEOUT = 10.0
 
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 
@@ -243,12 +250,20 @@ def main():
     exit_code = app.exec()
 
     # Best-effort final push so this machine's latest data reaches the server.
-    # Never let a sync failure affect a clean shutdown.
+    # Never let a slow/unreachable server or a sync failure affect a clean
+    # shutdown: run the push on a daemon thread and wait only a bounded time.
     if engine.available():
-        try:
-            engine.push()
-        except Exception as e:  # noqa: BLE001 — shutdown must not crash
-            print(f"[SYNC] push on close failed: {e}")
+        def _final_push() -> None:
+            try:
+                engine.push()
+            except Exception as e:  # noqa: BLE001 — shutdown must not crash
+                print(f"[SYNC] push on close failed: {e}")
+
+        pusher = threading.Thread(target=_final_push, daemon=True)
+        pusher.start()
+        pusher.join(_SHUTDOWN_PUSH_TIMEOUT)
+        if pusher.is_alive():
+            print("[SYNC] push on close timed out; exiting anyway")
 
     db.close()
     sys.exit(exit_code)

@@ -30,6 +30,25 @@ from version import decode_version, is_compatible
 # JSON int arrays which inflate ~4-6x on the wire.
 CHUNK_SIZE = 128 * 1024
 
+# How many pre-swap DB backups to retain. Each pull writes a full timestamped
+# copy of the previous DB; without pruning these accumulate forever in the DB
+# folder (often a Dropbox/iCloud folder), one per sync.
+MAX_BACKUPS = 5
+
+
+def _prune_backups(db_path: Path, keep: int = MAX_BACKUPS) -> None:
+    """Delete all but the ``keep`` newest ``<db>.bak-*`` files next to ``db_path``.
+
+    Backup names are timestamped ``%Y%m%d-%H%M%S`` so a lexical sort is
+    chronological. Best-effort: a failed unlink never blocks a completed swap.
+    """
+    backups = sorted(db_path.parent.glob(f"{db_path.name}.bak-*"))
+    for stale in backups[:-keep] if keep > 0 else backups:
+        try:
+            stale.unlink()
+        except OSError as e:
+            print(f"[SYNC] could not prune old backup {stale.name}: {e}")
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -247,6 +266,9 @@ class SyncEngine:
         self.cfg.last_synced_hash = local_sha
         self.cfg.last_synced_at = _utcnow_iso()
         self.cfg.save()
+
+        # Swap succeeded and is recorded — safe to trim old backups now.
+        _prune_backups(db_path)
 
         if on_applied is not None:
             on_applied()
